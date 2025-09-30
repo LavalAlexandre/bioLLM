@@ -1,5 +1,5 @@
 from openai import AsyncOpenAI, OpenAI
-from agents import Agent, Runner, OpenAIChatCompletionsModel
+from agents import Agent, Runner, OpenAIChatCompletionsModel, ModelSettings
 import os
 from dotenv import load_dotenv
 import asyncio
@@ -85,11 +85,11 @@ class Model:
                 model=self.model_name,
                 openai_client=self.async_client,
             ),
-            model_settings={
-                "maxTokens": 300,
-                "temperature": 0.3,
-                "frequencyPenalty": 0.5,
-            },
+            model_settings=ModelSettings(
+                max_tokens=300,
+                temperature=0.3,
+                frequency_penalty=0.5,
+            ),
             tools=[],  # Empty list - planning agent doesn't need tools
         )
 
@@ -108,11 +108,11 @@ class Model:
                 model=self.model_name,
                 openai_client=self.async_client,
             ),
-            model_settings={
-                "maxTokens": 800,
-                "temperature": 0.5,
-                "frequencyPenalty": 0.3,
-            },
+            model_settings=ModelSettings(
+                max_tokens=800,
+                temperature=0.5,
+                frequency_penalty=0.3,
+            ),
             tools=tools,  # This will have CbioportalSearchTool when enable_cbioportal=True
         )
 
@@ -139,12 +139,12 @@ class Model:
                 model=self.model_name,
                 openai_client=self.async_client,
             ),
-            model_settings={
-                "maxTokens": 2048,
-                "temperature": self.temperature,
-                "frequencyPenalty": 0.0,
-                "presencePenalty": 0.2,
-            },
+            model_settings=ModelSettings(
+                max_tokens=2048,
+                temperature=self.temperature,
+                frequency_penalty=0.0,
+                presence_penalty=0.2,
+            ),
             tools=[],  # Empty list - conclusion agent doesn't need tools
         )
 
