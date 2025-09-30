@@ -1,27 +1,27 @@
-import json
-import logging
-import re
 from pathlib import Path
 from typing import List, Dict, Any
 from openai import OpenAI
 from transformers import AutoTokenizer
 from tqdm import tqdm
 from src.model.model import Model
-from src.data_preprocess import load_questions,create_prompts,make_batches
+from src.data_preprocess import load_questions, create_prompts, make_batches
+import json
+import re
+import logging
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-#7Configuration for batch processing
-BATCH_SIZE = 256  # Number of questions per batch. Increasing this will speed up the processing at the cost of using more memory
+# Configuration for batch processing
+BATCH_SIZE = 256  # Number of questions per batch
 MAX_TOKENS_PER_QUESTION = 2_000  # Max tokens per individual question
 TEMPERATURE = 0.7  # Model temp
 
 # Initialize the OpenAI client to connect to vLLM server
 client = OpenAI(
     api_key="EMPTY",  # vLLM doesn't require authentication
-    base_url="http://localhost:8000/v1", #vLLM server URL, make sure you have the correct port
+    base_url="http://localhost:8000/v1", #vLLM server URL
 )
 
 # Test the connection
@@ -67,7 +67,7 @@ def extract_answer_from_response(response_text: str, question_data: Dict[str, An
     
     # Look for patterns like "A", "B", "Answer: A", "The answer is B", etc.
     patterns = [
-        rf'<answer>([{valid_pattern}])</answer>',  # Look for the required format first, then fallback patterns
+        rf'<answer>([{valid_pattern}])</answer>',
         rf'[aA]nswer[\s:]*([{valid_pattern}])',
         rf'\b([{valid_pattern}])\b',
         rf'option[\s:]*([{valid_pattern}])',
@@ -83,11 +83,10 @@ def extract_answer_from_response(response_text: str, question_data: Dict[str, An
     if isinstance(options, dict):
         for key, value in options.items():
             if value.lower() in response_text.lower():
-                return key.upper()
+                return key
     
     # Default to 'X' if no answer found
     return 'X'
-
 
 
 def generate_completions(questions: List[Dict[str, Any]], model: Model, output_filename: str = "answers.jsonl") -> List[Dict[str, Any]]:
@@ -101,36 +100,22 @@ def generate_completions(questions: List[Dict[str, Any]], model: Model, output_f
         
         try:
             prompts = create_prompts(batch, model.model_name)
-            responses = model.completion(
-                messages=prompts,
-                temperature=TEMPERATURE,
-                max_tokens=MAX_TOKENS_PER_QUESTION
+            response = model.completion(
+                prompts=prompts,
+                max_tokens=MAX_TOKENS_PER_QUESTION,
+                temperature=TEMPERATURE
             )
             
-            # Handle batch responses (list of response objects)
-            if isinstance(responses, list):
-                for question_data, response in zip(batch, responses):
-                    response_text = response.choices[0].text
-                    answer_letter = extract_answer_from_response(response_text, question_data)
-                    
-                    result = {
-                        **question_data,
-                        'raw_response': response_text,
-                        'answer_letter': answer_letter
-                    }
-                    results.append(result)
-            else:
-                # Single response object
-                for i, (question_data, choice) in enumerate(zip(batch, responses.choices)):
-                    response_text = choice.text
-                    answer_letter = extract_answer_from_response(response_text, question_data)
-                    
-                    result = {
-                        **question_data,
-                        'raw_response': response_text,
-                        'answer_letter': answer_letter
-                    }
-                    results.append(result)
+            for i, (question_data, choice) in enumerate(zip(batch, response.choices)):
+                response_text = choice.text
+                answer_letter = extract_answer_from_response(response_text, question_data)
+                
+                result = {
+                    **question_data,
+                    'raw_response': response_text,
+                    'answer_letter': answer_letter
+                }
+                results.append(result)
                 
         except Exception as e:
             print(f"Error processing batch {batch_idx + 1}: {e}")
@@ -150,8 +135,6 @@ def generate_completions(questions: List[Dict[str, Any]], model: Model, output_f
     print(f"Results saved to {output_filename}")
     return results
 
-# Process test questions
-
 
 def classify_file(file, model):
     if Path(file).exists():
@@ -163,4 +146,3 @@ def classify_file(file, model):
         print("✅ Test questions processed!")
     else:
         print(f"ℹ️  No {file} found in directory")
-    
