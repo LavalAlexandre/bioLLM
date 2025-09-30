@@ -9,6 +9,9 @@ import re
 import logging
 import asyncio
 
+TESTING_CONFIG = True
+
+
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -126,7 +129,15 @@ async def generate_completions_with_agent(questions: List[Dict[str, Any]], model
 
 def generate_completions(questions: List[Dict[str, Any]], model: Model, output_filename: str = "answers.jsonl") -> List[Dict[str, Any]]:
     """Generate completions for a list of questions (legacy batch mode)."""
+
+    if TESTING_CONFIG:
+        BATCH_SIZE = 1
+
     batches = make_batches(questions, BATCH_SIZE)
+    if TESTING_CONFIG:
+        batches = batches[:1]  # Only process first batch for testing
+
+
     print(f"Processing {len(questions)} questions in {len(batches)} batches...")
     
     results = []

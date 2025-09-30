@@ -20,7 +20,7 @@ import logging
 
 # Set up more detailed logging
 logging.basicConfig(
-    level=logging.ERROR,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -262,10 +262,19 @@ class Model:
                     input=f"Create a search plan for this question:\n{base_question}"
                 )
                 
-                # Extract JSON from plan result
-                plan_text = plan_result.text if hasattr(plan_result, 'text') else str(plan_result)
+                # Extract text from plan result - RunResult object has a final_output property
+                if hasattr(plan_result, 'final_output'):
+                    plan_text = str(plan_result.final_output)
+                elif hasattr(plan_result, 'text'):
+                    plan_text = plan_result.text
+                else:
+                    plan_text = str(plan_result)
+                
+                logger.debug(f"Raw planning text: {plan_text[:500]}...")
+                
+                # Extract JSON from the text
                 plan_json = self._extract_json(plan_text)
-                logger.debug(f"Planning result: {plan_json[:500]}...")
+                logger.debug(f"Extracted JSON: {plan_json[:500]}...")
                 
             except Exception as e:
                 logger.error(f"Planning agent failed: {type(e).__name__}: {str(e)}")
@@ -277,10 +286,25 @@ class Model:
             has_valid_plan = False
             try:
                 plan_data = json.loads(plan_json)
-                has_valid_plan = bool(plan_data.get('queries') or plan_data.get('entities'))
-                logger.info(f"Valid plan: {has_valid_plan}")
+                logger.debug(f"Parsed plan data: {json.dumps(plan_data, indent=2)}")
+                
+                # Check for queries or entities
+                has_queries = bool(plan_data.get('queries'))
+                has_entities = bool(plan_data.get('entities'))
+                has_valid_plan = has_queries or has_entities
+                
+                logger.info(f"Plan validation - has_queries: {has_queries}, has_entities: {has_entities}, valid: {has_valid_plan}")
+                
+                if not has_valid_plan:
+                    logger.warning(f"Plan has no queries or entities. Plan keys: {list(plan_data.keys())}")
+                    
             except json.JSONDecodeError as e:
-                logger.warning(f"Failed to parse plan JSON: {e}")
+                logger.warning(f"Failed to parse plan JSON: {e}. Skipping to direct reasoning.")
+                logger.debug(f"Invalid plan JSON was: {plan_json[:200]}...")
+                # Set empty plan to trigger direct reasoning
+                plan_json = '{}'
+                has_valid_plan = False
+
                 
             
             # Step 2: Search execution (only if we have a valid plan)
@@ -301,10 +325,19 @@ Execute searches for the question:
                         input=search_input,
                     )
                     
+                    # Extract text from search result
+                    if hasattr(search_result, 'final_output'):
+                        search_text = str(search_result.final_output)
+                    elif hasattr(search_result, 'text'):
+                        search_text = search_result.text
+                    else:
+                        search_text = str(search_result)
+                    
+                    logger.debug(f"Raw search text: {search_text[:500]}...")
+                    
                     # Extract JSON from search results
-                    search_text = search_result.text if hasattr(search_result, 'text') else str(search_result)
                     search_json = self._extract_json(search_text)
-                    logger.debug(f"Search result: {search_json[:500]}...")
+                    logger.debug(f"Extracted search JSON: {search_json[:500]}...")
                     
                     # Check if we have valid search results
                     try:
