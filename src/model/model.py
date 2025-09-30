@@ -3,7 +3,9 @@ from agents import Agent, Runner, OpenAIChatCompletionsModel
 import os
 from dotenv import load_dotenv
 import asyncio
-from typing import List, Union
+from typing import List
+from src.model.biorxiv_tool import BiorxivSearchTool
+
 load_dotenv()
 
 # Ensure OPENAI_API_KEY is set for the agents library
@@ -14,7 +16,7 @@ else:
 
 class Model:
 
-    def __init__(self,temperature:int=1):
+    def __init__(self,temperature:int=1, enable_search:bool=True):
         print("Initializing Model and connecting to vLLM server...")
         self.client = OpenAI(
             api_key="EMPTY",  # vLLM doesn't require authentication
@@ -45,14 +47,22 @@ class Model:
             raise e 
         print(f"Using model: {self.model_name}")
 
+
+        # Prepare tools list
+        tools = []
+        if enable_search:
+            tools.append(BiorxivSearchTool())
+            print("✓ BioRxiv search tool enabled")
+
         # Define the agent with async client
         self.agent = Agent(
             name="Openai agent",
-            instructions="Answer the question as truthfully as possible",
+            instructions="You are a concise multiple choice question answering assistant expert",
             model=OpenAIChatCompletionsModel(
                 model=self.model_name,
                 openai_client=self.async_client,
             ),
+        tools=tools if tools else None,
         )
 
 

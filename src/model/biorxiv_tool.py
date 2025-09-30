@@ -1,36 +1,46 @@
-from typing import List, Tuple, Dict, Optional, Any
-import requests
-from collections import Counter
-from typing import List, Tuple, Dict, Optional, Any
-from smolagents import DuckDuckGoSearchTool
-import json
-import logging
-from openai import OpenAI
-from smolagents import CodeAgent, OpenAIServerModel, Tool
-
-import requests
-from io import StringIO
-import pandas as pd
-from collections import defaultdict
-
-
-duckduckgo_tool = DuckDuckGoSearchTool()
-
+from agents import Tool
+from duckduckgo_search import DDGS
+from typing import Any
 
 class BiorxivSearchTool(Tool):
-    """Tool for searching arXiv using DuckDuckGo."""
+    """Tool for searching bioRxiv preprints using DuckDuckGo."""
     
     name = "search_biorxiv"
-    description = "Search biorxiv for preprints related to biology topics"
-    inputs = {
-        "query": {
-            "type": "string",
-            "description": "The search query for biorxiv preprints"
-        }
-    }
-    output_type = "string"
+    description = "Search bioRxiv for biology preprints. Use this when you need to find recent research papers or preprints on biological topics."
     
-    def forward(self, query: str) -> str:
-        """Search arXiv using DuckDuckGo site search."""
-        search_query = f"site:biorxiv.org {query}"
-        return duckduckgo_tool(search_query)
+    def execute(self, query: str) -> str:
+        """
+        Search bioRxiv using DuckDuckGo site search.
+        
+        Args:
+            query: The search query for bioRxiv preprints
+            
+        Returns:
+            Search results as a formatted string
+        """
+        try:
+            # Add site restriction for bioRxiv
+            search_query = f"site:biorxiv.org {query}"
+            
+            # Initialize DuckDuckGo search
+            ddgs = DDGS()
+            
+            # Perform search and get top 5 results
+            results = list(ddgs.text(search_query, max_results=5))
+            
+            if not results:
+                return f"No bioRxiv preprints found for query: {query}"
+            
+            # Format results
+            formatted_results = []
+            for i, result in enumerate(results, 1):
+                formatted_results.append(
+                    f"{i}. {result.get('title', 'No title')}\n"
+                    f"   URL: {result.get('href', 'No URL')}\n"
+                    f"   {result.get('body', 'No description')}"
+                )
+            
+            return "\n\n".join(formatted_results)
+            
+        except Exception as e:
+            return f"Error searching bioRxiv: {str(e)}"
