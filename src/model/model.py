@@ -49,18 +49,29 @@ class Model:
                 for item in messages
             ]
             
-            responses = batch_completion_models_all_responses(
-                models=[model] * len(message_batches),
-                messages=message_batches,
-                api_base=api_base,
-                api_key=api_key,
-                custom_llm_provider="openai",
-                temperature=temperature,
-                max_tokens=max_tokens
-            )
-            print(f"Batch responses received: {len(responses)}")
-            
-            return [self._wrap_response(resp) for resp in responses]
+            try:
+                responses = batch_completion_models_all_responses(
+                    models=[model] * len(message_batches),
+                    messages=message_batches,
+                    api_base=api_base,
+                    api_key=api_key,
+                    custom_llm_provider="openai",
+                    temperature=temperature,
+                    max_tokens=max_tokens
+                )
+                print(f"DEBUG: Batch responses type: {type(responses)}")
+                print(f"DEBUG: Batch responses length: {len(responses) if hasattr(responses, '__len__') else 'N/A'}")
+                if isinstance(responses, list) and len(responses) > 0:
+                    print(f"DEBUG: First response type: {type(responses[0])}")
+                    print(f"DEBUG: First response: {responses[0]}")
+                
+                return [self._wrap_response(resp) for resp in responses]
+            except Exception as e:
+                print(f"DEBUG: Error in batch_completion: {e}")
+                print(f"DEBUG: Error type: {type(e)}")
+                import traceback
+                traceback.print_exc()
+                raise
         
         # Single message or already formatted chat messages
         if isinstance(messages, list):
