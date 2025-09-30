@@ -2,6 +2,8 @@ from openai import AsyncOpenAI, OpenAI
 from agents import Agent, Runner, OpenAIChatCompletionsModel
 import os
 from dotenv import load_dotenv
+import asyncio
+from typing import List, Union
 load_dotenv()
 
 class Model:
@@ -72,7 +74,7 @@ class Model:
 
     async def agent_completion(self, input_text: str):
         """
-        Generate completions using the agent framework.
+        Generate completions using the agent framework for a single prompt.
         
         Args:
             input_text: The input prompt/question
@@ -82,3 +84,27 @@ class Model:
         """
         result = await Runner.run(self.agent, input=input_text)
         return result
+
+    async def agent_batch_completion(self, inputs: List[str], max_concurrent: int = 10):
+        """
+        Generate completions using the agent framework for multiple prompts concurrently.
+        
+        Args:
+            inputs: List of input prompts/questions
+            max_concurrent: Maximum number of concurrent requests (default: 10)
+            
+        Returns:
+            List of agent responses in the same order as inputs
+        """
+        # Create a semaphore to limit concurrent requests
+        semaphore = asyncio.Semaphore(max_concurrent)
+        
+        async def process_with_semaphore(input_text: str):
+            async with semaphore:
+                return await self.agent_completion(input_text)
+        
+        # Process all inputs concurrently with semaphore limit
+        tasks = [process_with_semaphore(input_text) for input_text in inputs]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        return results

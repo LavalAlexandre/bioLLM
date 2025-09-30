@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 BATCH_SIZE = 256  # Number of questions per batch
 MAX_TOKENS_PER_QUESTION = 2_000  # Max tokens per individual question
 TEMPERATURE = 0.7  # Model temp
+MAX_CONCURRENT_AGENTS = 10  # Maximum concurrent agent requests
 
 # Initialize the OpenAI client to connect to vLLM server
 client = OpenAI(
@@ -91,49 +92,62 @@ def extract_answer_from_response(response_text: str, question_data: Dict[str, An
 
 
 async def generate_completions_with_agent(questions: List[Dict[str, Any]], model: Model, output_filename: str = "answers.jsonl") -> List[Dict[str, Any]]:
-    """Generate completions for a list of questions using the agent."""
-    print(f"Processing {len(questions)} questions using agent...")
+    """Generate completions for a list of questions using the agent with batch processing."""
+    print(f"Processing {len(questions)} questions using agent (batched)...")
     
-    results = []
+    # Create prompts for all questions
+    prompts = create_prompts(questions, model.model_name)
     
-    # Process questions with progress bar
-    for question_data in tqdm(questions, desc="Processing questions"):
+    # Process in batches with progress tracking
+    batches = make_batches(questions, BATCH_SIZE)
+    all_results = []
+    
+    for batch_idx, batch in enumerate(batches):
+        print(f"\nProcessing batch {batch_idx + 1}/{len(batches)} ({len(batch)} questions)...")
+        
+        # Get prompts for this batch
+        batch_prompts = create_prompts(batch, model.model_name)
+        
         try:
-            # Create prompt for single question
-            prompts = create_prompts([question_data], model.model_name)
-            prompt = prompts[0] if isinstance(prompts, list) else prompts
+            # Run batch completion concurrently
+            batch_responses = await model.agent_batch_completion(batch_prompts, max_concurrent=MAX_CONCURRENT_AGENTS)
             
-            # Use agent completion
-            result_obj = await model.agent_completion(prompt)
-            
-            # Extract response text from agent result
-            response_text = str(result_obj.final_response) if hasattr(result_obj, 'final_response') else str(result_obj)
-            
-            answer_letter = extract_answer_from_response(response_text, question_data)
-            
-            result = {
-                **question_data,
-                'raw_response': response_text,
-                'answer_letter': answer_letter
-            }
-            results.append(result)
-            
+            # Process responses
+            for question_data, result_obj in zip(batch, batch_responses):
+                # Handle exceptions from gather
+                if isinstance(result_obj, Exception):
+                    print(f"Error processing question {question_data.get('id', 'unknown')}: {result_obj}")
+                    response_text = f'Error: {str(result_obj)}'
+                    answer_letter = 'X'
+                else:
+                    # Extract response text from agent result
+                    response_text = str(result_obj.final_response) if hasattr(result_obj, 'final_response') else str(result_obj)
+                    answer_letter = extract_answer_from_response(response_text, question_data)
+                
+                result = {
+                    **question_data,
+                    'raw_response': response_text,
+                    'answer_letter': answer_letter
+                }
+                all_results.append(result)
+                
         except Exception as e:
-            print(f"Error processing question {question_data.get('id', 'unknown')}: {e}")
-            result = {
-                **question_data,
-                'raw_response': f'Error: {str(e)}',
-                'answer_letter': 'X'
-            }
-            results.append(result)
+            print(f"Error processing batch {batch_idx + 1}: {e}")
+            for question_data in batch:
+                result = {
+                    **question_data,
+                    'raw_response': f'Error: {str(e)}',
+                    'answer_letter': 'X'
+                }
+                all_results.append(result)
     
     # Save results
     with open(output_filename, 'w') as f:
-        for result in results:
+        for result in all_results:
             f.write(json.dumps(result) + '\n')
     
     print(f"Results saved to {output_filename}")
-    return results
+    return all_results
 
 
 def generate_completions(questions: List[Dict[str, Any]], model: Model, output_filename: str = "answers.jsonl") -> List[Dict[str, Any]]:
