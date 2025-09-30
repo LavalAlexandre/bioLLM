@@ -39,24 +39,23 @@ class Model:
         api_base = os.getenv("VLLM_ADDRESS", "http://localhost:8000/v1")
         api_key = os.getenv("VLLM_API_KEY", "EMPTY")
         if isinstance(messages, list):
-            prompt = "\n".join(
-                f"{item.get('role', 'user')}: {item.get('content', '')}"
-                if isinstance(item, dict) else str(item)
+            chat_messages = [
+                item if isinstance(item, dict)
+                else {"role": "user", "content": str(item)}
                 for item in messages
-            )
+            ]
         else:
-            prompt = str(messages)
-
-
+            chat_messages = [{"role": "user", "content": str(messages)}]
 
         raw_response = litellm.completion(
                     model=model,
-                    prompt=prompt,
+                    messages=chat_messages,
                     api_base=api_base,
                     api_key=api_key,
                     custom_llm_provider="openai",
                     temperature=temperature,
                     max_tokens=max_tokens)
+
         print(f"Raw response from litellm: {raw_response}")
 
         def _to_choice(choice_dict):
@@ -64,6 +63,7 @@ class Model:
             if text is None:
                 message = choice_dict.get("message") or {}
                 text = message.get("content", "")
+
             return SimpleNamespace(
                 text=text,
                 index=choice_dict.get("index"),
