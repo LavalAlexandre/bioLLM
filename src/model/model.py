@@ -212,7 +212,6 @@ class Model:
             self.planning_agent, 
             input=f"Create a search plan for this question:\n{input_text}"
         )
-        trace_id = plan_result.trace_id if hasattr(plan_result, 'trace_id') else None
 
         
         # Extract JSON from plan result
@@ -229,7 +228,6 @@ Execute searches for the question:
         search_result = await Runner.run(
             self.search_agent, 
             input=search_input,
-            trace_id=trace_id,
         )
         
         # Extract JSON from search results
@@ -251,7 +249,6 @@ Analyze and provide your final answer."""
         final_result = await Runner.run(
             self.conclusion_agent, 
             input=conclusion_input,
-            trace_id=trace_id,
         )
         
         return final_result
