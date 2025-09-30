@@ -34,10 +34,33 @@ class Model:
             raise e 
         print(f"Using model: {self.model_name}")
 
+
     def completion(self, messages, temperature=1, max_tokens=512):
         model = self.model_name
         api_base = os.getenv("VLLM_ADDRESS", "http://localhost:8000/v1")
         api_key = os.getenv("VLLM_API_KEY", "EMPTY")
+        
+        # Normalize messages to list of message lists
+        if isinstance(messages, list) and all(not isinstance(item, dict) for item in messages):
+            # List of simple prompts - batch them
+            message_batches = [
+                [{"role": "user", "content": str(item)}]
+                for item in messages
+            ]
+            
+            responses = batch_completion_models_all_responses(
+                models=[model] * len(message_batches),
+                messages=message_batches,
+                api_base=api_base,
+                api_key=api_key,
+                custom_llm_provider="openai",
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            
+            return [self._wrap_response(resp) for resp in responses]
+        
+        # Single message or already formatted chat messages
         if isinstance(messages, list):
             chat_messages = [
                 item if isinstance(item, dict)
@@ -46,18 +69,20 @@ class Model:
             ]
         else:
             chat_messages = [{"role": "user", "content": str(messages)}]
-
+        
         raw_response = litellm.completion(
-                    model=model,
-                    messages=chat_messages,
-                    api_base=api_base,
-                    api_key=api_key,
-                    custom_llm_provider="openai",
-                    temperature=temperature,
-                    max_tokens=max_tokens)
-
-        print(f"Raw response from litellm: {raw_response}")
-
+            model=model,
+            messages=chat_messages,
+            api_base=api_base,
+            api_key=api_key,
+            custom_llm_provider="openai",
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
+        
+        return self._wrap_response(raw_response)
+    
+    def _wrap_response(self, raw_response):
         def _to_choice(choice_dict):
             text = choice_dict.get("text")
             if text is None:
@@ -70,41 +95,11 @@ class Model:
                 finish_reason=choice_dict.get("finish_reason")
             )
         
-        def _wrap_response(raw_response):
-            return SimpleNamespace(
-                id=raw_response.get("id"),
-                object=raw_response.get("object"),
-                created=raw_response.get("created"),
-                model=raw_response.get("model"),
-                usage=raw_response.get("usage"),
-                choices=[_to_choice(choice) for choice in raw_response.get("choices", [])]
-            )
-
-        def _dispatch(chat_messages):
-            raw_response = litellm.completion(
-                        model=model,
-                        messages=chat_messages,
-                        api_base=api_base,
-                        api_key=api_key,
-                        custom_llm_provider="openai",
-                        temperature=temperature,
-                        max_tokens=max_tokens)
-            print(f"Raw response from litellm: {raw_response}")
-            return _wrap_response(raw_response)
-
-        if isinstance(messages, list) and all(not isinstance(item, dict) for item in messages):
-            return [
-                _dispatch([{"role": "user", "content": str(item)}])
-                for item in messages
-            ]
-
-        if isinstance(messages, list):
-            chat_messages = [
-                item if isinstance(item, dict)
-                else {"role": "user", "content": str(item)}
-                for item in messages
-            ]
-        else:
-            chat_messages = [{"role": "user", "content": str(messages)}]
-
-        return _dispatch(chat_messages)
+        return SimpleNamespace(
+            id=raw_response.get("id"),
+            object=raw_response.get("object"),
+            created=raw_response.get("created"),
+            model=raw_response.get("model"),
+            usage=raw_response.get("usage"),
+            choices=[_to_choice(choice) for choice in raw_response.get("choices", [])]
+        )
