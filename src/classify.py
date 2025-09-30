@@ -1,7 +1,6 @@
 from pathlib import Path
 from typing import List, Dict, Any
-from openai import OpenAI
-from transformers import AutoTokenizer
+
 from tqdm.asyncio import tqdm
 from src.model.model import Model
 from src.data_preprocess import load_questions, create_prompts, make_batches
@@ -19,27 +18,6 @@ BATCH_SIZE = 256  # Number of questions per batch
 MAX_TOKENS_PER_QUESTION = 2_000  # Max tokens per individual question
 TEMPERATURE = 0.7  # Model temp
 MAX_CONCURRENT_AGENTS = BATCH_SIZE  # Maximum concurrent agent requests
-
-# Initialize the OpenAI client to connect to vLLM server
-client = OpenAI(
-    api_key="EMPTY",  # vLLM doesn't require authentication
-    base_url="http://localhost:8000/v1", #vLLM server URL
-)
-
-# Test the connection
-try:
-    models = list(client.models.list())
-    if models:
-        print("vLLM server is up and running!")
-        print(f"Available models: {[model.id for model in models]}")
-        model_name = models[0].id
-    else:
-        raise Exception("No models available")
-except Exception as e:
-    print(f"Error connecting to vLLM server: {e}")
-    print("Make sure the server is running by executing `./start_vllm_docker.sh`")
-    raise e 
-
 
 def extract_answer_from_response(response_text: str, question_data: Dict[str, Any]) -> str:
     """
@@ -94,10 +72,7 @@ def extract_answer_from_response(response_text: str, question_data: Dict[str, An
 async def generate_completions_with_agent(questions: List[Dict[str, Any]], model: Model, output_filename: str = "answers.jsonl") -> List[Dict[str, Any]]:
     """Generate completions for a list of questions using the agent with batch processing."""
     print(f"Processing {len(questions)} questions using agent (batched)...")
-    
-    # Create prompts for all questions
-    prompts = create_prompts(questions, model.model_name)
-    
+        
     # Process in batches with progress tracking
     batches = make_batches(questions, BATCH_SIZE)
     all_results = []

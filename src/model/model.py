@@ -48,9 +48,35 @@ class Model:
             raise e 
         print(f"Using model: {self.model_name}")
 
+        # Initialize specialized agents
+        self._init_agents(enable_biorxiv, enable_cbioportal)
 
-        # Prepare tools list
-        instructions = "You are a multiple choice question answering assistant expert."
+    def _init_agents(self, enable_biorxiv: bool, enable_cbioportal: bool):
+        """Initialize the multi-agent system with different token limits"""
+        
+        # 1. Planning Agent - lightweight, focused on entity extraction
+        self.planning_agent = Agent(
+            name="Planning Agent",
+            instructions="""You are a planning agent for biological question answering.
+
+            Analyze the question briefly and identify:
+            - Key biological entities (genes, proteins, cancer types, diseases)
+            - Which tools to use (bioRxiv for literature, cBioPortal for mutations)
+            - Specific search queries
+            
+            Be concise. Provide a brief plan.""",
+            model=OpenAIChatCompletionsModel(
+                model=self.model_name,
+                openai_client=self.async_client,
+                # Planning should be quick - limit tokens
+                max_tokens=300,
+                temperature=0.3,  # Lower temperature for focused planning
+                frequency_penalty=0.5,  # Discourage repetition
+            ),
+            tools=None,
+        )
+
+        # 2. Search Agent - executes searches based on plan
         tools = []
         tool_descriptions = []
         
@@ -64,34 +90,59 @@ class Model:
             tool_descriptions.append("cBioPortal mutation data")
             print("✓ cBioPortal search tool enabled")
         
-        # Build instructions based on enabled tools
-        if tools:
-            tool_list = " and ".join(tool_descriptions)
-            instructions = f"""You are a biology expert assistant with access to {tool_list}.
+        tool_list = " and ".join(tool_descriptions) if tools else "no external tools"
+        
+        self.search_agent = Agent(
+            name="Search Agent",
+            instructions=f"""You are a search execution agent with access to {tool_list}.
 
-            When answering questions:
-            1. Identify key biological entities in the question (genes, proteins, cancer types, diseases, biological processes).
-            2. Use appropriate tools to gather relevant information:
-            - Use search_biorxiv for recent research, literature, and general biological knowledge
-            - Use search_cbioportal for gene mutation statistics in specific cancer types
-            3. Review the search results carefully to inform your answer.
-            4. After gathering information, provide your answer in the format: <answer>[letter]</answer>
-
-            For multiple choice questions, select the correct option and provide a brief explanation based on the research findings."""
-        else:
-            instructions = "You are a concise multiple choice question answering assistant expert."
-
-        # Define the agent with async client
-        self.agent = Agent(
-            name="Openai agent",
-            instructions=instructions,
+            Execute the search plan:
+            1. Use the appropriate tools based on the plan
+            2. Gather comprehensive data
+            3. Report what you found concisely
+            
+            Focus on efficient tool execution.""",
             model=OpenAIChatCompletionsModel(
                 model=self.model_name,
                 openai_client=self.async_client,
+                # Search agent needs tokens for tool calls but not extensive reasoning
+                max_tokens=800,
+                temperature=0.5,
+                frequency_penalty=0.3,
             ),
-        tools=tools if tools else None,
+            tools=tools if tools else None,
         )
 
+        # 3. Conclusion Agent - deep reasoning with gathered data
+        self.conclusion_agent = Agent(
+            name="Conclusion Agent",
+            instructions="""You are an expert biological reasoning agent.
+
+            You will receive:
+            - The original question
+            - A search plan
+            - Search results from tools
+            
+            NOW think deeply and carefully:
+            - Analyze all evidence from the search results
+            - Consider biological mechanisms and relationships
+            - Evaluate each answer option against the evidence
+            - Reason through which answer is most supported by the data
+            
+            After thorough analysis, provide your final answer: <answer>[letter]</answer>
+            
+            Use your reasoning capacity fully - this is where deep thinking matters.""",
+            model=OpenAIChatCompletionsModel(
+                model=self.model_name,
+                openai_client=self.async_client,
+                # Conclusion agent gets the most tokens for deep reasoning
+                max_tokens=2048,
+                temperature=self.temperature,  # Use configured temperature
+                frequency_penalty=0.0,  # Allow thorough exploration
+                presence_penalty=0.2,  # Encourage covering different aspects
+            ),
+            tools=None,
+        )
 
     def completion(self, prompts, temperature=1, max_tokens=512):
         """
@@ -117,16 +168,44 @@ class Model:
 
     async def agent_completion(self, input_text: str):
         """
-        Generate completions using the agent framework for a single prompt.
+        Generate completions using the multi-agent framework.
         
         Args:
             input_text: The input prompt/question
             
         Returns:
-            The agent's response
+            The final agent's response
         """
-        result = await Runner.run(self.agent, input=input_text)
-        return result
+        # Step 1: Planning (limited tokens)
+        plan_result = await Runner.run(
+            self.planning_agent, 
+            input=f"Create a search plan for this question:\n{input_text}"
+        )
+        
+        # Step 2: Search execution (moderate tokens)
+        search_input = f"""Execute this plan:
+{plan_result.output}
+
+For the question:
+{input_text}"""
+        
+        search_result = await Runner.run(self.search_agent, input=search_input)
+        
+        # Step 3: Conclusion (most tokens for deep reasoning)
+        conclusion_input = f"""Original Question:
+{input_text}
+
+Search Plan:
+{plan_result.output}
+
+Search Results:
+{search_result.output}
+
+Now analyze carefully and provide your final answer."""
+        
+        final_result = await Runner.run(self.conclusion_agent, input=conclusion_input)
+        
+        return final_result
 
     async def agent_batch_completion(self, inputs: List[str], max_concurrent: int = 10):
         """
