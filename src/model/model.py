@@ -85,6 +85,12 @@ class Model:
         return self._wrap_response(raw_response)
     
     def _wrap_response(self, raw_response):
+        # Debug: print the type and structure
+        print(f"DEBUG: raw_response type: {type(raw_response)}")
+        if isinstance(raw_response, list) and len(raw_response) > 0:
+            print(f"DEBUG: First item type: {type(raw_response[0])}")
+            print(f"DEBUG: First item: {raw_response[0]}")
+        
         # Handle if raw_response is already a list (from batch operations)
         if isinstance(raw_response, list):
             return [self._wrap_single_response(resp) for resp in raw_response]
@@ -96,6 +102,13 @@ class Model:
             if isinstance(obj, dict):
                 return obj.get(key, default)
             return getattr(obj, key, default)
+        
+        # Handle list of responses (batch_completion_models_all_responses returns list of lists)
+        if isinstance(raw_response, list):
+            if len(raw_response) > 0:
+                raw_response = raw_response[0]  # Get first item if it's a list
+            else:
+                return SimpleNamespace(choices=[])
         
         def _to_choice(choice_dict):
             text = safe_get(choice_dict, "text")
