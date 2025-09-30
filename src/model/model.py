@@ -1,4 +1,5 @@
 import litellm 
+from litellm import batch_completion_models_all_responses
 
 from openai import OpenAI
 from types import SimpleNamespace
