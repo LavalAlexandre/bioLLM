@@ -1,5 +1,5 @@
-from openai import OpenAI, AsyncOpenAI
-from agents import Agent, Runner, OpenAIChatCompletionsModel, ModelSettings
+from openai import AsyncOpenAI, OpenAI
+from agents import Agent, Runner, OpenAIChatCompletionsModel
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -19,7 +19,7 @@ class Model:
             base_url="http://localhost:8000/v1",
         )
 
-        self.model_settings = ModelSettings(temperature=temperature)
+        self.temperature = temperature
 
         # Test the connection
         try:
@@ -42,9 +42,8 @@ class Model:
             name="Openai agent",
             instructions="Answer the question as truthfully as possible",
             model=OpenAIChatCompletionsModel(
+                model=self.model_name,
                 openai_client=self.async_client,
-                model=self.model_name,  # Changed from model_name to model
-                model_settings=self.model_settings
             ),
         )
 
