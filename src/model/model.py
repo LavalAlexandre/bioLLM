@@ -58,6 +58,7 @@ class Model:
                 temperature=temperature,
                 max_tokens=max_tokens
             )
+            print(f"Batch responses received: {len(responses)}")
             
             return [self._wrap_response(resp) for resp in responses]
         
@@ -84,23 +85,37 @@ class Model:
         return self._wrap_response(raw_response)
     
     def _wrap_response(self, raw_response):
+        # Handle if raw_response is already a list (from batch operations)
+        if isinstance(raw_response, list):
+            return [self._wrap_single_response(resp) for resp in raw_response]
+        return self._wrap_single_response(raw_response)
+    
+    def _wrap_single_response(self, raw_response):
+        # Handle both dict and object responses
+        def safe_get(obj, key, default=None):
+            if isinstance(obj, dict):
+                return obj.get(key, default)
+            return getattr(obj, key, default)
+        
         def _to_choice(choice_dict):
-            text = choice_dict.get("text")
+            text = safe_get(choice_dict, "text")
             if text is None:
-                message = choice_dict.get("message") or {}
-                text = message.get("content", "")
+                message = safe_get(choice_dict, "message") or {}
+                text = safe_get(message, "content", "")
             return SimpleNamespace(
                 text=text,
-                index=choice_dict.get("index"),
-                logprobs=choice_dict.get("logprobs"),
-                finish_reason=choice_dict.get("finish_reason")
+                index=safe_get(choice_dict, "index"),
+                logprobs=safe_get(choice_dict, "logprobs"),
+                finish_reason=safe_get(choice_dict, "finish_reason")
             )
         
+        choices = safe_get(raw_response, "choices", [])
+        
         return SimpleNamespace(
-            id=raw_response.get("id"),
-            object=raw_response.get("object"),
-            created=raw_response.get("created"),
-            model=raw_response.get("model"),
-            usage=raw_response.get("usage"),
-            choices=[_to_choice(choice) for choice in raw_response.get("choices", [])]
+            id=safe_get(raw_response, "id"),
+            object=safe_get(raw_response, "object"),
+            created=safe_get(raw_response, "created"),
+            model=safe_get(raw_response, "model"),
+            usage=safe_get(raw_response, "usage"),
+            choices=[_to_choice(choice) for choice in choices]
         )
