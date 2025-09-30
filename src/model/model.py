@@ -197,7 +197,6 @@ class Model:
         )
         
         return response
-
     async def agent_completion(self, input_text: str):
         """
         Generate completions using the multi-agent framework.
@@ -216,32 +215,50 @@ class Model:
             self.planning_agent, 
             input=f"Create a search plan for this question:\n{base_question}"
         )
-
         
         # Extract JSON from plan result
         plan_text = plan_result.text if hasattr(plan_result, 'text') else str(plan_result)
         plan_json = self._extract_json(plan_text)
         
-        # Step 2: Search execution (moderate tokens - 800 max)
-        # Only provide the base question, not the answer options
-        search_input = f"""Search plan:
+        # Check if we have a valid plan
+        has_valid_plan = False
+        try:
+            plan_data = json.loads(plan_json)
+            has_valid_plan = bool(plan_data.get('queries') or plan_data.get('entities'))
+        except json.JSONDecodeError:
+            pass
+        
+        # Step 2: Search execution (only if we have a valid plan)
+        search_json = None
+        has_search_results = False
+        
+        if has_valid_plan:
+            search_input = f"""Search plan:
 {plan_json}
 
 Execute searches for the question:
 {base_question}"""
+            
+            search_result = await Runner.run(
+                self.search_agent, 
+                input=search_input,
+            )
+            
+            # Extract JSON from search results
+            search_text = search_result.text if hasattr(search_result, 'text') else str(search_result)
+            search_json = self._extract_json(search_text)
+            
+            # Check if we have valid search results
+            try:
+                search_data = json.loads(search_json)
+                has_search_results = bool(search_data.get('results'))
+            except json.JSONDecodeError:
+                pass
         
-        search_result = await Runner.run(
-            self.search_agent, 
-            input=search_input,
-        )
-        
-        # Extract JSON from search results
-        search_text = search_result.text if hasattr(search_result, 'text') else str(search_result)
-        search_json = self._extract_json(search_text)
-        
-        # Step 3: Conclusion (most tokens - 2048 max for deep reasoning)
-        # NOW provide the full question with options for final reasoning
-        conclusion_input = f"""Question:
+        # Step 3: Conclusion - adjust input based on what we have
+        if has_search_results:
+            # Full pipeline: question + plan + results
+            conclusion_input = f"""Question:
 {input_text}
 
 Search Plan:
@@ -250,7 +267,22 @@ Search Plan:
 Search Results:
 {search_json}
 
-Analyze and provide your final answer."""
+Analyze the search results and provide your final answer."""
+        elif has_valid_plan:
+            # Plan created but no results found
+            conclusion_input = f"""Question:
+{input_text}
+
+Search Plan:
+{plan_json}
+
+No search results were found. Answer based on your biological knowledge."""
+        else:
+            # No plan or results - direct reasoning
+            conclusion_input = f"""Question:
+{input_text}
+
+Answer this question based on your biological knowledge and reasoning."""
         
         final_result = await Runner.run(
             self.conclusion_agent, 
@@ -258,30 +290,6 @@ Analyze and provide your final answer."""
         )
         
         return final_result
-
-
-    def _extract_base_question(self, input_text: str) -> str:
-        """Extract just the question text without answer options and instructions"""
-        # Remove everything from "Options:" onward
-        if "Options:" in input_text:
-            parts = input_text.split("Options:", 1)
-            question_part = parts[0].strip()
-        else:
-            question_part = input_text
-        
-        # Remove everything from "Please provide" onward (catches both variants)
-        if "Please provide" in question_part:
-            question_part = question_part.split("Please provide", 1)[0].strip()
-        
-        # Remove "Question:" prefix if present
-        if question_part.startswith("Question:"):
-            question_part = question_part.replace("Question:", "", 1).strip()
-        
-        # Remove "Format your answer" if somehow still present
-        if "Format your answer" in question_part:
-            question_part = question_part.split("Format your answer", 1)[0].strip()
-        
-        return question_part
 
 
     async def agent_batch_completion(self, inputs: List[str], max_concurrent: int = 10):
