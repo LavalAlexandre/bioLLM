@@ -41,10 +41,12 @@ class Model:
         if isinstance(messages, list):
             prompt = "\n".join(
                 f"{item.get('role', 'user')}: {item.get('content', '')}"
+                if isinstance(item, dict) else str(item)
                 for item in messages
             )
         else:
-            prompt = messages
+            prompt = str(messages)
+
 
 
         raw_response = litellm.completion(
@@ -55,7 +57,7 @@ class Model:
                     custom_llm_provider="openai",
                     temperature=temperature,
                     max_tokens=max_tokens)
-
+        print(f"Raw response from litellm: {raw_response}")
 
         def _to_choice(choice_dict):
             text = choice_dict.get("text")
