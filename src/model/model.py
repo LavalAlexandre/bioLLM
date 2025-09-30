@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 import asyncio
 import json
 import re
-from typing import List
+from typing import List, Any, Dict
 from src.model.biorxiv_tool import BiorxivSearchTool
 from src.model.cbioportal_tool import CbioportalSearchTool
 
@@ -16,6 +16,27 @@ if not os.getenv("OPENAI_API_KEY"):
     print("WARNING: OPENAI_API_KEY not found in .env file")
 else:
     os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
+
+
+class CustomOpenAIChatModel(OpenAIChatCompletionsModel):
+    """Custom model that allows passing extra_body for vLLM chat template kwargs"""
+    
+    def __init__(
+        self,
+        model: str,
+        openai_client: AsyncOpenAI,
+        extra_body: Dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(model=model, openai_client=openai_client)
+        self.extra_body = extra_body or {}
+    
+    async def complete(self, messages, **kwargs):
+        """Override complete to inject extra_body"""
+        # Merge extra_body into kwargs
+        if self.extra_body:
+            kwargs['extra_body'] = {**kwargs.get('extra_body', {}), **self.extra_body}
+        return await super().complete(messages, **kwargs)
+
 
 class Model:
 
@@ -52,6 +73,7 @@ class Model:
 
         # Initialize specialized agents
         self._init_agents(enable_biorxiv=enable_biorxiv, enable_cbioportal=enable_cbioportal)
+        
     def _init_agents(self, enable_biorxiv: bool, enable_cbioportal: bool):
         """Initialize the multi-agent system with different token budgets"""
         
@@ -71,7 +93,7 @@ class Model:
         
         tool_list = " and ".join(tool_descriptions) if tools else "no external tools"
         
-        # 1. Planning Agent - lightweight, focused on entity extraction (NO TOOLS)
+        # 1. Planning Agent - NO THINKING, just JSON output
         self.planning_agent = Agent(
             name="Planning Agent",
             instructions="""You are a planning agent. Extract key information and output JSON immediately.
@@ -90,19 +112,20 @@ class Model:
             - Create 1-2 specific search queries
             
             Output the JSON directly. No explanation needed.""",
-            model=OpenAIChatCompletionsModel(
+            model=CustomOpenAIChatModel(
                 model=self.model_name,
                 openai_client=self.async_client,
+                extra_body={"chat_template_kwargs": {"thinking": False}}  # Disable thinking
             ),
             model_settings=ModelSettings(
-                max_tokens=200,  # Reduced further
-                temperature=0.1,  # Very low temperature for focused output
-                frequency_penalty=0.7,  # Strong penalty against repetition
+                max_tokens=200,
+                temperature=0.1,
+                frequency_penalty=0.7,
             ),
             tools=[],
         )
 
-        # 2. Search Agent - executes searches based on plan (HAS TOOLS)
+        # 2. Search Agent - NO THINKING, just execute tools
         self.search_agent = Agent(
             name="Search Agent",
             instructions=f"""You are a search execution agent with access to {tool_list}.
@@ -117,19 +140,20 @@ class Model:
             }}
             
             Execute tools and report findings concisely.""",
-            model=OpenAIChatCompletionsModel(
+            model=CustomOpenAIChatModel(
                 model=self.model_name,
                 openai_client=self.async_client,
+                extra_body={"chat_template_kwargs": {"thinking": False}}  # Disable thinking
             ),
             model_settings=ModelSettings(
-                max_tokens=1000,  # More tokens for tool execution
+                max_tokens=1000,
                 temperature=0.3,
                 frequency_penalty=0.3,
             ),
             tools=tools,
         )
 
-        # 3. Conclusion Agent - deep reasoning with gathered data (NO TOOLS)
+        # 3. Conclusion Agent - THINKING ENABLED for deep reasoning
         self.conclusion_agent = Agent(
             name="Conclusion Agent",
             instructions="""You are an expert biological reasoning agent.
@@ -146,9 +170,10 @@ class Model:
             After reasoning, provide your answer: <answer>[letter]</answer>
             
             You have 2048 tokens - use them to think thoroughly.""",
-            model=OpenAIChatCompletionsModel(
+            model=CustomOpenAIChatModel(
                 model=self.model_name,
                 openai_client=self.async_client,
+                extra_body={"chat_template_kwargs": {"thinking": True}}  # Enable thinking
             ),
             model_settings=ModelSettings(
                 max_tokens=2048,
@@ -207,19 +232,18 @@ class Model:
         Returns:
             The final agent's response
         """
-        # Step 1: Planning (limited tokens - 300 max)
+        # Step 1: Planning (200 tokens, NO thinking)
         plan_result = await Runner.run(
             self.planning_agent, 
-            input=f"Create a search plan for this question:\n{input_text}"
+            input=input_text
         )
         trace_id = plan_result.trace_id if hasattr(plan_result, 'trace_id') else None
-
         
         # Extract JSON from plan result
         plan_text = plan_result.text if hasattr(plan_result, 'text') else str(plan_result)
         plan_json = self._extract_json(plan_text)
         
-        # Step 2: Search execution (moderate tokens - 800 max)
+        # Step 2: Search execution (1000 tokens, NO thinking)
         search_input = f"""Search plan:
 {plan_json}
 
@@ -236,7 +260,7 @@ Execute searches for the question:
         search_text = search_result.text if hasattr(search_result, 'text') else str(search_result)
         search_json = self._extract_json(search_text)
         
-        # Step 3: Conclusion (most tokens - 2048 max for deep reasoning)
+        # Step 3: Conclusion (2048 tokens, WITH thinking)
         conclusion_input = f"""Question:
 {input_text}
 
