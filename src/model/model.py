@@ -52,7 +52,7 @@ class Model:
         self._init_agents(enable_biorxiv, enable_cbioportal)
 
     def _init_agents(self, enable_biorxiv: bool, enable_cbioportal: bool):
-        """Initialize the multi-agent system with different token limits"""
+        """Initialize the multi-agent system with different token budgets"""
         
         # 1. Planning Agent - lightweight, focused on entity extraction
         self.planning_agent = Agent(
@@ -61,18 +61,19 @@ class Model:
 
             Analyze the question briefly and identify:
             - Key biological entities (genes, proteins, cancer types, diseases)
-            - Which tools to use (bioRxiv for literature, cBioPortal for mutations)
+            - Which tools to use (cBioPortal for genes and cancer)
             - Specific search queries
             
             Be concise. Provide a brief plan.""",
             model=OpenAIChatCompletionsModel(
                 model=self.model_name,
                 openai_client=self.async_client,
-                # Planning should be quick - limit tokens
-                max_completion_tokens=300,
-                temperature=0.3,  # Lower temperature for focused planning
-                frequency_penalty=0.5,  # Discourage repetition
             ),
+            model_settings={
+                "maxTokens": 300,
+                "temperature": 0.3,
+                "frequencyPenalty": 0.5,
+            },
             tools=None,
         )
 
@@ -105,11 +106,12 @@ class Model:
             model=OpenAIChatCompletionsModel(
                 model=self.model_name,
                 openai_client=self.async_client,
-                # Search agent needs tokens for tool calls but not extensive reasoning
-                max_completion_tokens=800,
-                temperature=0.5,
-                frequency_penalty=0.3,
             ),
+            model_settings={
+                "maxTokens": 800,
+                "temperature": 0.5,
+                "frequencyPenalty": 0.3,
+            },
             tools=tools if tools else None,
         )
 
@@ -135,23 +137,24 @@ class Model:
             model=OpenAIChatCompletionsModel(
                 model=self.model_name,
                 openai_client=self.async_client,
-                # Conclusion agent gets the most tokens for deep reasoning
-                max_completion_tokens=2048,
-                temperature=self.temperature,  # Use configured temperature
-                frequency_penalty=0.0,  # Allow thorough exploration
-                presence_penalty=0.2,  # Encourage covering different aspects
             ),
+            model_settings={
+                "maxTokens": 2048,
+                "temperature": self.temperature,
+                "frequencyPenalty": 0.0,
+                "presencePenalty": 0.2,
+            },
             tools=None,
         )
 
-    def completion(self, prompts, temperature=1, max_completion_tokens=512):
+    def completion(self, prompts, temperature=1, max_tokens=512):
         """
         Generate completions for a single prompt or batch of prompts.
         
         Args:
             prompts: Either a single string prompt or a list of string prompts
             temperature: Sampling temperature
-            max_completion_tokens: Maximum tokens to generate
+            max_tokens: Maximum tokens to generate
             
         Returns:
             A response object with choices attribute
@@ -160,7 +163,7 @@ class Model:
         response = self.client.completions.create(
             model=self.model_name,
             prompt=prompts,
-            max_completion_tokens=max_completion_tokens,
+            max_tokens=max_tokens,
             temperature=temperature
         )
         
@@ -176,22 +179,25 @@ class Model:
         Returns:
             The final agent's response
         """
-        # Step 1: Planning (limited tokens)
+        # Step 1: Planning (limited tokens - 300 max)
         plan_result = await Runner.run(
             self.planning_agent, 
             input=f"Create a search plan for this question:\n{input_text}"
         )
         
-        # Step 2: Search execution (moderate tokens)
+        # Step 2: Search execution (moderate tokens - 800 max)
         search_input = f"""Execute this plan:
 {plan_result.output}
 
 For the question:
 {input_text}"""
         
-        search_result = await Runner.run(self.search_agent, input=search_input)
+        search_result = await Runner.run(
+            self.search_agent, 
+            input=search_input
+        )
         
-        # Step 3: Conclusion (most tokens for deep reasoning)
+        # Step 3: Conclusion (most tokens - 2048 max for deep reasoning)
         conclusion_input = f"""Original Question:
 {input_text}
 
@@ -203,7 +209,10 @@ Search Results:
 
 Now analyze carefully and provide your final answer."""
         
-        final_result = await Runner.run(self.conclusion_agent, input=conclusion_input)
+        final_result = await Runner.run(
+            self.conclusion_agent, 
+            input=conclusion_input
+        )
         
         return final_result
 
