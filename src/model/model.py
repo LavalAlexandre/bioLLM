@@ -1,6 +1,7 @@
 import litellm 
 
 from openai import OpenAI
+from types import SimpleNamespace
 
 #get VLLM_ADDRESS from .env
 import os
@@ -11,6 +12,7 @@ load_dotenv()
 class Model:
 
     def __init__(self):
+        print("Initializing Model and connecting to vLLM server...")
         self.client = OpenAI(
             api_key="EMPTY",  # vLLM doesn't require authentication
             base_url="http://localhost:8000/v1", #vLLM server URL, make sure you have the correct port
@@ -30,23 +32,41 @@ class Model:
             print(f"Error connecting to vLLM server: {e}")
             print("Make sure the server is running by executing `./start_vllm_docker.sh`")
             raise e 
+        print(f"Using model: {self.model_name}")
 
     def completion(self, messages, temperature=1, max_tokens=512):
         model=self.model_name
         api_base = os.getenv("VLLM_ADDRESS")
 
-        # response = self.client.completions.create(
-        #         model=self.model_name,
-        #         prompt=messages,
-        #         max_tokens=max_tokens,
-        #         temperature=temperature
-        #     )
-
-        response = litellm.completion(
+        raw_response = litellm.completion(
                     model=model,
-                    messages=messages,
+                    prompt=messages,
                     api_base=api_base,
                     temperature=temperature,
                     max_tokens=max_tokens)
+
+        def _to_choice(choice_dict):
+            text = choice_dict.get("text")
+            if text is None:
+                message = choice_dict.get("message") or {}
+                text = message.get("content", "")
+            return SimpleNamespace(
+                text=text,
+                index=choice_dict.get("index"),
+                logprobs=choice_dict.get("logprobs"),
+                finish_reason=choice_dict.get("finish_reason")
+            )
+        print(f"Raw response: {raw_response}")
+
+        return SimpleNamespace(
+            id=raw_response.get("id"),
+            object=raw_response.get("object"),
+            created=raw_response.get("created"),
+            model=raw_response.get("model"),
+            usage=raw_response.get("usage"),
+            choices=[_to_choice(choice) for choice in raw_response.get("choices", [])]
+        )
+        
+
         
         return response
