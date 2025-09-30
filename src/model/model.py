@@ -52,7 +52,6 @@ class Model:
 
         # Initialize specialized agents
         self._init_agents(enable_biorxiv=enable_biorxiv, enable_cbioportal=enable_cbioportal)
-
     def _init_agents(self, enable_biorxiv: bool, enable_cbioportal: bool):
         """Initialize the multi-agent system with different token budgets"""
         
@@ -75,28 +74,32 @@ class Model:
         # 1. Planning Agent - lightweight, focused on entity extraction (NO TOOLS)
         self.planning_agent = Agent(
             name="Planning Agent",
-            instructions="""You are a planning agent for biological question answering.
+            instructions="""You are a planning agent. Extract key information and output JSON immediately.
 
-            Analyze the question and create a search plan.
-            
-            Output ONLY a JSON object with this structure:
+            Your JSON must have this exact structure:
             {
-                "entities": ["gene1", "protein1", "cancer_type"],
+                "entities": ["gene1", "gene2", "cancer_type"],
                 "tools": ["cbioportal"],
-                "queries": ["specific search query 1", "specific search query 2"]
+                "queries": ["query1", "query2"]
             }
             
-            Think briefly, then output the JSON.""",
+            Rules:
+            - Extract gene names from the question
+            - Extract cancer type from the question
+            - Use "cbioportal" as the tool for gene/cancer queries
+            - Create 1-2 specific search queries
+            
+            Output the JSON directly. No explanation needed.""",
             model=OpenAIChatCompletionsModel(
                 model=self.model_name,
                 openai_client=self.async_client,
             ),
             model_settings=ModelSettings(
-                max_tokens=300,
-                temperature=0.3,
-                frequency_penalty=0.5,
+                max_tokens=200,  # Reduced further
+                temperature=0.1,  # Very low temperature for focused output
+                frequency_penalty=0.7,  # Strong penalty against repetition
             ),
-            tools=[],  # Empty list - planning agent doesn't need tools
+            tools=[],
         )
 
         # 2. Search Agent - executes searches based on plan (HAS TOOLS)
@@ -104,29 +107,26 @@ class Model:
             name="Search Agent",
             instructions=f"""You are a search execution agent with access to {tool_list}.
 
-            You will receive a JSON search plan with entities, tools, and queries.
+            You receive a JSON plan. Execute the searches using the tools.
             
-            Execute the searches using the appropriate tools.
-            
-            Output your findings ONLY as a JSON object:
+            Output your findings as JSON:
             {{
                 "results": [
-                    {{"source": "tool_name", "data": "findings"}},
-                    ...
+                    {{"source": "cbioportal", "data": "mutation data here"}},
                 ]
             }}
             
-            Be concise. Focus on execution.""",
+            Execute tools and report findings concisely.""",
             model=OpenAIChatCompletionsModel(
                 model=self.model_name,
                 openai_client=self.async_client,
             ),
             model_settings=ModelSettings(
-                max_tokens=800,
-                temperature=0.5,
+                max_tokens=1000,  # More tokens for tool execution
+                temperature=0.3,
                 frequency_penalty=0.3,
             ),
-            tools=tools,  # This will have CbioportalSearchTool when enable_cbioportal=True
+            tools=tools,
         )
 
         # 3. Conclusion Agent - deep reasoning with gathered data (NO TOOLS)
@@ -134,20 +134,18 @@ class Model:
             name="Conclusion Agent",
             instructions="""You are an expert biological reasoning agent.
 
-            You will receive:
-            - The original question
-            - A JSON search plan
-            - JSON search results
+            You receive:
+            - Original question with answer options
+            - Search results (JSON)
             
-            NOW think deeply and carefully:
-            - Analyze all evidence from the search results
-            - Consider biological mechanisms and relationships
-            - Evaluate each answer option against the evidence
-            - Reason through which answer is most supported by the data
+            Think deeply about:
+            - What the search results tell you
+            - Which answer option is supported by the evidence
+            - Biological mechanisms involved
             
-            After thorough analysis, provide your final answer: <answer>[letter]</answer>
+            After reasoning, provide your answer: <answer>[letter]</answer>
             
-            Use your reasoning capacity fully - this is where deep thinking matters.""",
+            You have 2048 tokens - use them to think thoroughly.""",
             model=OpenAIChatCompletionsModel(
                 model=self.model_name,
                 openai_client=self.async_client,
@@ -158,7 +156,7 @@ class Model:
                 frequency_penalty=0.0,
                 presence_penalty=0.2,
             ),
-            tools=[],  # Empty list - conclusion agent doesn't need tools
+            tools=[],
         )
 
     def _extract_json(self, text: str) -> str:
