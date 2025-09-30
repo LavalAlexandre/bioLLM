@@ -16,6 +16,16 @@ if not os.getenv("OPENAI_API_KEY"):
     print("WARNING: OPENAI_API_KEY not found in .env file")
 else:
     os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
+import logging
+
+# Set up more detailed logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+load_dotenv()
 
 class Model:
 
@@ -98,6 +108,9 @@ class Model:
         
         tool_list = " and ".join(tool_descriptions) if tools else "no external tools"
         
+        # Detect if model supports thinking (gpt-oss models do, others might not)
+        supports_thinking = 'gpt-oss' in self.model_name.lower()
+        
         # 1. Planning Agent - lightweight, focused on entity extraction (NO TOOLS)
         self.planning_agent = Agent(
             name="Planning Agent",
@@ -120,11 +133,12 @@ class Model:
             model=OpenAIChatCompletionsModel(
                 model=self.model_name,
                 openai_client=self.async_client,
+                thinking={'type': 'enabled', 'budget_tokens': 200} if supports_thinking else None,
             ),
             model_settings=ModelSettings(
-                max_tokens=800,  # 
-                temperature=0.1,  # Very low temperature for focused output
-                frequency_penalty=0.7,  # Strong penalty against repetition
+                max_tokens=800,
+                temperature=0.1,
+                frequency_penalty=0.7,
             ),
             tools=[],
         )
@@ -134,25 +148,30 @@ class Model:
             name="Search Agent",
             instructions=f"""You are a search execution agent with access to {tool_list}.
             
-            You receive a JSON plan. Execute the searches using the tools.
+            You receive a JSON plan with entities and queries. Execute the searches using the appropriate tools.
             
-            Output your findings as JSON:
+            For cBioPortal searches:
+            - Use the genes and cancer type from the plan
+            - Call search_cbioportal with the extracted entities
+            
+            Output your findings as JSON containing the raw tool outputs:
             {{
                 "results": [
-                    {{"source": "cbioportal", "data": "gene data here"}},
+                    {{"source": "cbioportal", "data": <raw_tool_output>}},
+                    {{"source": "biorxiv", "data": <raw_tool_output>}}
                 ]
             }}
             
-            Execute tools and report findings concisely.""",
+            Pass through the complete tool outputs without summarizing. The conclusion agent will analyze them.""",
             model=OpenAIChatCompletionsModel(
                 model=self.model_name,
                 openai_client=self.async_client,
+                thinking={'type': 'enabled', 'budget_tokens': 500} if supports_thinking else None,
             ),
             model_settings=ModelSettings(
-                max_tokens=2000,  # More tokens for tool execution
+                max_tokens=2000,
                 temperature=0.3,
                 frequency_penalty=0.2,
-            
             ),
             tools=tools,
         )
@@ -162,21 +181,23 @@ class Model:
             name="Conclusion Agent",
             instructions="""You are an expert biological reasoning agent.
 
-            You receive:
+            You may receive:
             - Original question with answer options
-            - Search results (JSON)
+            - Search plan (optional)
+            - Search results (optional)
             
             Think deeply about:
-            - What the search results tell you
+            - What the search results tell you (if available)
             - Which answer option is supported by the evidence
             - Biological mechanisms involved
             
             After reasoning, provide your answer: <answer>[letter]</answer>
             
-            You have 2048 tokens - use them to think thoroughly.""",
+            You have up to 3048 tokens - use them to think thoroughly.""",
             model=OpenAIChatCompletionsModel(
                 model=self.model_name,
                 openai_client=self.async_client,
+                thinking={'type': 'enabled', 'budget_tokens': 1500} if supports_thinking else None,
             ),
             model_settings=ModelSettings(
                 max_tokens=3048,
@@ -234,58 +255,83 @@ class Model:
         Returns:
             The final agent's response
         """
-        # Extract just the question text (without options) for planning/search
-        base_question = self._extract_base_question(input_text)
-        
-        # Step 1: Planning (limited tokens - 300 max)
-        plan_result = await Runner.run(
-            self.planning_agent, 
-            input=f"Create a search plan for this question:\n{base_question}"
-        )
-        
-        # Extract JSON from plan result
-        plan_text = plan_result.text if hasattr(plan_result, 'text') else str(plan_result)
-        plan_json = self._extract_json(plan_text)
-        
-        # Check if we have a valid plan
-        has_valid_plan = False
         try:
-            plan_data = json.loads(plan_json)
-            has_valid_plan = bool(plan_data.get('queries') or plan_data.get('entities'))
-        except json.JSONDecodeError:
-            pass
-        
-        # Step 2: Search execution (only if we have a valid plan)
-        search_json = None
-        has_search_results = False
-        
-        if has_valid_plan:
-            search_input = f"""Search plan:
+            # Extract just the question text (without options) for planning/search
+            base_question = self._extract_base_question(input_text)
+            logger.info(f"Processing question: {base_question[:100]}...")
+            
+            # Step 1: Planning (limited tokens - 800 max)
+            logger.info("Step 1: Running planning agent...")
+            try:
+                plan_result = await Runner.run(
+                    self.planning_agent, 
+                    input=f"Create a search plan for this question:\n{base_question}"
+                )
+                
+                # Extract JSON from plan result
+                plan_text = plan_result.text if hasattr(plan_result, 'text') else str(plan_result)
+                plan_json = self._extract_json(plan_text)
+                logger.debug(f"Planning result: {plan_json[:500]}...")
+                
+            except Exception as e:
+                logger.error(f"Planning agent failed: {type(e).__name__}: {str(e)}")
+                # If planning fails, skip to direct reasoning
+                plan_json = '{}'
+                plan_text = '{}'
+            
+            # Check if we have a valid plan
+            has_valid_plan = False
+            try:
+                plan_data = json.loads(plan_json)
+                has_valid_plan = bool(plan_data.get('queries') or plan_data.get('entities'))
+                logger.info(f"Valid plan: {has_valid_plan}")
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse plan JSON: {e}")
+            
+            # Step 2: Search execution (only if we have a valid plan)
+            search_json = None
+            has_search_results = False
+            
+            if has_valid_plan:
+                logger.info("Step 2: Running search agent...")
+                search_input = f"""Search plan:
 {plan_json}
 
 Execute searches for the question:
 {base_question}"""
+                
+                try:
+                    search_result = await Runner.run(
+                        self.search_agent, 
+                        input=search_input,
+                    )
+                    
+                    # Extract JSON from search results
+                    search_text = search_result.text if hasattr(search_result, 'text') else str(search_result)
+                    search_json = self._extract_json(search_text)
+                    logger.debug(f"Search result: {search_json[:500]}...")
+                    
+                    # Check if we have valid search results
+                    try:
+                        search_data = json.loads(search_json)
+                        has_search_results = bool(search_data.get('results'))
+                        logger.info(f"Valid search results: {has_search_results}")
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Failed to parse search JSON: {e}")
+                        
+                except Exception as e:
+                    logger.error(f"Search agent failed: {type(e).__name__}: {str(e)}")
+                    if hasattr(e, 'response'):
+                        logger.error(f"Response status: {getattr(e.response, 'status_code', 'N/A')}")
+                        logger.error(f"Response body: {getattr(e.response, 'text', str(e))[:1000]}")
+            else:
+                logger.info("Skipping search - no valid plan")
             
-            search_result = await Runner.run(
-                self.search_agent, 
-                input=search_input,
-            )
-            
-            # Extract JSON from search results
-            search_text = search_result.text if hasattr(search_result, 'text') else str(search_result)
-            search_json = self._extract_json(search_text)
-            
-            # Check if we have valid search results
-            try:
-                search_data = json.loads(search_json)
-                has_search_results = bool(search_data.get('results'))
-            except json.JSONDecodeError:
-                pass
-        
-        # Step 3: Conclusion - adjust input based on what we have
-        if has_search_results:
-            # Full pipeline: question + plan + results
-            conclusion_input = f"""Question:
+            # Step 3: Conclusion - adjust input based on what we have
+            logger.info("Step 3: Running conclusion agent...")
+            if has_search_results:
+                # Full pipeline: question + plan + results
+                conclusion_input = f"""Question:
 {input_text}
 
 Search Plan:
@@ -295,29 +341,43 @@ Search Results:
 {search_json}
 
 Analyze the search results and provide your final answer."""
-        elif has_valid_plan:
-            # Plan created but no results found
-            conclusion_input = f"""Question:
+                logger.info("Using full pipeline with search results")
+            elif has_valid_plan:
+                # Plan created but no results found
+                conclusion_input = f"""Question:
 {input_text}
 
 Search Plan:
 {plan_json}
 
 No search results were found. Answer based on your biological knowledge."""
-        else:
-            # No plan or results - direct reasoning
-            conclusion_input = f"""Question:
+                logger.info("Using plan without search results")
+            else:
+                # No plan or results - direct reasoning
+                conclusion_input = f"""Question:
 {input_text}
 
 Answer this question based on your biological knowledge and reasoning."""
-        
-        final_result = await Runner.run(
-            self.conclusion_agent, 
-            input=conclusion_input,
-        )
-        
-        return final_result
-
+                logger.info("Using direct reasoning without tools")
+            
+            try:
+                final_result = await Runner.run(
+                    self.conclusion_agent, 
+                    input=conclusion_input,
+                )
+                logger.info("Conclusion agent completed successfully")
+                return final_result
+                
+            except Exception as e:
+                logger.error(f"Conclusion agent failed: {type(e).__name__}: {str(e)}")
+                if hasattr(e, 'response'):
+                    logger.error(f"Response status: {getattr(e.response, 'status_code', 'N/A')}")
+                    logger.error(f"Response body: {getattr(e.response, 'text', str(e))[:1000]}")
+                raise
+                
+        except Exception as e:
+            logger.error(f"Agent completion failed: {type(e).__name__}: {str(e)}", exc_info=True)
+            raise
 
     async def agent_batch_completion(self, inputs: List[str], max_concurrent: int = 10):
         """
