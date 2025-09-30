@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import asyncio
 from typing import List
 from src.model.biorxiv_tool import BiorxivSearchTool
+from src.model.cbioportal_tool import CbioportalSearchTool
 
 load_dotenv()
 
@@ -16,7 +17,7 @@ else:
 
 class Model:
 
-    def __init__(self,temperature:int=1, enable_search:bool=True):
+    def __init__(self,temperature:int=1, enable_biorxiv:bool=True, enable_cbioportal:bool=True):
         print("Initializing Model and connecting to vLLM server...")
         self.client = OpenAI(
             api_key="EMPTY",  # vLLM doesn't require authentication
@@ -51,18 +52,34 @@ class Model:
         # Prepare tools list
         instructions = "You are a multiple choice question answering assistant expert."
         tools = []
-        if enable_search:
+        tool_descriptions = []
+        
+        if enable_biorxiv:
             tools.append(BiorxivSearchTool)
+            tool_descriptions.append("bioRxiv research papers")
             print("✓ BioRxiv search tool enabled")
-            instructions = """You are a biology expert assistant with access to bioRxiv research papers.
-                When answering questions:
-                1. If the question involves recent research, specific genes, proteins, or biological mechanisms that would benefit from literature search, use the search_biorxiv tool to find relevant papers.
-                2. Search for key terms from the question (gene names, proteins, disease names, biological processes).
-                3. Review the search results to inform your answer.
-                4. After searching, provide your answer in the format: <answer>[letter]</answer>
+        
+        if enable_cbioportal:
+            tools.append(CbioportalSearchTool)
+            tool_descriptions.append("cBioPortal mutation data")
+            print("✓ cBioPortal search tool enabled")
+        
+        # Build instructions based on enabled tools
+        if tools:
+            tool_list = " and ".join(tool_descriptions)
+            instructions = f"""You are a biology expert assistant with access to {tool_list}.
 
-                For multiple choice questions, select the correct option and provide a brief explanation based on the research findings."""
+            When answering questions:
+            1. Identify key biological entities in the question (genes, proteins, cancer types, diseases, biological processes).
+            2. Use appropriate tools to gather relevant information:
+            - Use search_biorxiv for recent research, literature, and general biological knowledge
+            - Use search_cbioportal for gene mutation statistics in specific cancer types
+            3. Review the search results carefully to inform your answer.
+            4. After gathering information, provide your answer in the format: <answer>[letter]</answer>
 
+            For multiple choice questions, select the correct option and provide a brief explanation based on the research findings."""
+        else:
+            instructions = "You are a concise multiple choice question answering assistant expert."
 
         # Define the agent with async client
         self.agent = Agent(
