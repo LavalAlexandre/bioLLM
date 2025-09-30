@@ -51,7 +51,7 @@ class Model:
         # Prepare tools list
         tools = []
         if enable_search:
-            tools.append(BiorxivSearchTool())
+            tools.append(BiorxivSearchTool)
             print("✓ BioRxiv search tool enabled")
 
         # Define the agent with async client
