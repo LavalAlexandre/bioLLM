@@ -186,53 +186,6 @@ class Model:
             input=f"Create a search plan for this question:\n{input_text}"
         )
         
-        # Step 2: Search execution (moderate tokens - 800 max)
-        search_input = f"""Execute this plan:
-{plan_result.output}
-
-For the question:
-{input_text}"""
-        
-        search_result = await Runner.run(
-            self.search_agent, 
-            input=search_input
-        )
-        
-        # Step 3: Conclusion (most tokens - 2048 max for deep reasoning)
-        conclusion_input = f"""Original Question:
-{input_text}
-
-Search Plan:
-{plan_result.output}
-
-Search Results:
-{search_result.output}
-
-Now analyze carefully and provide your final answer."""
-        
-        final_result = await Runner.run(
-            self.conclusion_agent, 
-            input=conclusion_input
-        )
-        
-        return final_result
-
-    async def agent_completion(self, input_text: str):
-        """
-        Generate completions using the multi-agent framework.
-        
-        Args:
-            input_text: The input prompt/question
-            
-        Returns:
-            The final agent's response
-        """
-        # Step 1: Planning (limited tokens - 300 max)
-        plan_result = await Runner.run(
-            self.planning_agent, 
-            input=f"Create a search plan for this question:\n{input_text}"
-        )
-        
         # Extract the plan from the result
         plan_output = plan_result.text if hasattr(plan_result, 'text') else str(plan_result)
         
@@ -267,5 +220,29 @@ Now analyze carefully and provide your final answer."""
             self.conclusion_agent, 
             input=conclusion_input
         )
-        #for now only return the final result
+        
         return final_result
+
+    async def agent_batch_completion(self, inputs: List[str], max_concurrent: int = 10):
+        """
+        Generate completions using the agent framework for multiple prompts concurrently.
+        
+        Args:
+            inputs: List of input prompts/questions
+            max_concurrent: Maximum number of concurrent requests (default: 10)
+            
+        Returns:
+            List of agent responses in the same order as inputs
+        """
+        # Create a semaphore to limit concurrent requests
+        semaphore = asyncio.Semaphore(max_concurrent)
+        
+        async def process_with_semaphore(input_text: str):
+            async with semaphore:
+                return await self.agent_completion(input_text)
+        
+        # Process all inputs concurrently with semaphore limit
+        tasks = [process_with_semaphore(input_text) for input_text in inputs]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        return results
