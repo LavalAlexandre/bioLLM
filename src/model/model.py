@@ -49,15 +49,25 @@ class Model:
 
 
         # Prepare tools list
+        instructions = "You are a multiple choice question answering assistant expert."
         tools = []
         if enable_search:
             tools.append(BiorxivSearchTool)
             print("✓ BioRxiv search tool enabled")
+            instructions = """You are a biology expert assistant with access to bioRxiv research papers.
+                When answering questions:
+                1. If the question involves recent research, specific genes, proteins, or biological mechanisms that would benefit from literature search, use the search_biorxiv tool to find relevant papers.
+                2. Search for key terms from the question (gene names, proteins, disease names, biological processes).
+                3. Review the search results to inform your answer.
+                4. After searching, provide your answer in the format: <answer>[letter]</answer>
+
+                For multiple choice questions, select the correct option and provide a brief explanation based on the research findings."""
+
 
         # Define the agent with async client
         self.agent = Agent(
             name="Openai agent",
-            instructions="You are a concise multiple choice question answering assistant expert",
+            instructions=instructions,
             model=OpenAIChatCompletionsModel(
                 model=self.model_name,
                 openai_client=self.async_client,

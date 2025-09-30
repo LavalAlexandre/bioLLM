@@ -1,6 +1,5 @@
 from agents import function_tool
-from duckduckgo_search import DDGS
-
+from ddgs import DDGS
 @function_tool
 def search_biorxiv(query: str) -> str:
     """
