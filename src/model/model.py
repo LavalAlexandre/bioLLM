@@ -66,7 +66,7 @@ class Model:
         
         if enable_cbioportal:
             tools.append(CbioportalSearchTool)
-            tool_descriptions.append("cBioPortal mutation data")
+            tool_descriptions.append("cBioPortal genes description data given a cancer type")
             print("✓ cBioPortal search tool enabled")
         
         tool_list = " and ".join(tool_descriptions) if tools else "no external tools"
@@ -87,7 +87,7 @@ class Model:
             - Extract gene names from the question
             - Extract cancer type from the question
             - Use "cbioportal" as the tool for gene/cancer queries
-            - Create 1-2 specific search queries
+            - Create 0-4 specific search queries
             
             Output the JSON directly. No explanation needed.""",
             model=OpenAIChatCompletionsModel(
@@ -112,7 +112,7 @@ class Model:
             Output your findings as JSON:
             {{
                 "results": [
-                    {{"source": "cbioportal", "data": "mutation data here"}},
+                    {{"source": "cbioportal", "data": "gene data here"}},
                 ]
             }}
             
@@ -124,6 +124,7 @@ class Model:
             model_settings=ModelSettings(
                 max_tokens=2000,  # More tokens for tool execution
                 temperature=0.3,
+                frequency_penalty=0.2,
             
             ),
             tools=tools,

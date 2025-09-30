@@ -8,15 +8,24 @@ from agents import function_tool
 @function_tool
 def search_cbioportal(genes: str, cancer_name: str) -> str:
     """
-    Search cBioPortal to get gene mutation statistics for a specific cancer type.
+    Search cBioPortal to get gene statistics for a specific cancer type.
     
     Args:
         genes: Comma-separated list of gene symbols (e.g., 'TP53,PIK3CA')
-        cancer_name: Name of the cancer study (e.g., 'Breast Invasive Carcinoma')
+        cancer_name: Name of the cancer (e.g., 'Breast Invasive Carcinoma')
         
     Returns:
         JSON string with mutation frequency and profile for each gene.
-        Format: {"GENE": {"mutation_frequency": float, "compact_profile": str}}
+        Format: {
+            "GENE": {
+                "mutation_frequency": float,  # Proportion of patients with mutation (0.0-1.0)
+                "compact_profile": str  # Format: "freq:0.XX|avg_vaf:0.XX|top_type:MUTATION_TYPE"
+            }
+        }
+        compact_profile fields:
+        - freq: mutation frequency (same as mutation_frequency)
+        - avg_vaf: average variant allele frequency across mutations
+        - top_type: most common mutation type (e.g., Missense_Mutation, Nonsense_Mutation)
     """
     gene_list = [gene.strip().upper() for gene in genes.split(',')]
     
