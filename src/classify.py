@@ -141,8 +141,11 @@ def generate_completions(questions: List[Dict[str, Any]], model: Model, output_f
 
 def classify_file(file, model):
     if Path(file).exists():
+        print(f"ℹ️  Found {file} in directory, processing test questions...")
         questions = load_questions(file)
-        results = generate_completions(questions, model_name, "result/test_answers.jsonl")
+        print(f"ℹ️  Loaded {len(questions)} questions from {file}")
+        print("ℹ️  Generating completions...")
+        results = generate_completions(questions, model, "result/test_answers.jsonl")
         print("✅ Test questions processed!")
     else:
         print(f"ℹ️  No {file} found in directory")
