@@ -52,6 +52,33 @@ class Model:
 
         # Initialize specialized agents
         self._init_agents(enable_biorxiv=enable_biorxiv, enable_cbioportal=enable_cbioportal)
+    
+
+    def _extract_base_question(self, input_text: str) -> str:
+        """Extract just the question text without answer options and instructions"""
+        # Remove everything from "Options:" onward
+        if "Options:" in input_text:
+            parts = input_text.split("Options:", 1)
+            question_part = parts[0].strip()
+        else:
+            question_part = input_text
+        
+        # Remove everything from "Please provide" onward (catches both variants)
+        if "Please provide" in question_part:
+            question_part = question_part.split("Please provide", 1)[0].strip()
+        
+        # Remove "Question:" prefix if present
+        if question_part.startswith("Question:"):
+            question_part = question_part.replace("Question:", "", 1).strip()
+        
+        # Remove "Format your answer" if somehow still present
+        if "Format your answer" in question_part:
+            question_part = question_part.split("Format your answer", 1)[0].strip()
+        
+        return question_part
+
+
+
     def _init_agents(self, enable_biorxiv: bool, enable_cbioportal: bool):
         """Initialize the multi-agent system with different token budgets"""
         
@@ -315,3 +342,5 @@ Answer this question based on your biological knowledge and reasoning."""
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         return results
+    
+    
