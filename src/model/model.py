@@ -3,6 +3,8 @@ from agents import Agent, Runner, OpenAIChatCompletionsModel, ModelSettings
 import os
 from dotenv import load_dotenv
 import asyncio
+import json
+import re
 from typing import List
 from src.model.biorxiv_tool import BiorxivSearchTool
 from src.model.cbioportal_tool import CbioportalSearchTool
@@ -75,12 +77,16 @@ class Model:
             name="Planning Agent",
             instructions="""You are a planning agent for biological question answering.
 
-            Analyze the question briefly and identify:
-            - Key biological entities (genes, proteins, cancer types, diseases)
-            - Which tools to use (cBioPortal for genes and cancer)
-            - Specific search queries
+            Analyze the question and create a search plan.
             
-            Be concise. Provide a brief plan.""",
+            Output ONLY a JSON object with this structure:
+            {
+                "entities": ["gene1", "protein1", "cancer_type"],
+                "tools": ["cbioportal"],
+                "queries": ["specific search query 1", "specific search query 2"]
+            }
+            
+            Think briefly, then output the JSON.""",
             model=OpenAIChatCompletionsModel(
                 model=self.model_name,
                 openai_client=self.async_client,
@@ -98,12 +104,19 @@ class Model:
             name="Search Agent",
             instructions=f"""You are a search execution agent with access to {tool_list}.
 
-            Execute the search plan:
-            1. Use the appropriate tools based on the plan
-            2. Gather comprehensive data
-            3. Report what you found concisely
+            You will receive a JSON search plan with entities, tools, and queries.
             
-            Focus on efficient tool execution.""",
+            Execute the searches using the appropriate tools.
+            
+            Output your findings ONLY as a JSON object:
+            {{
+                "results": [
+                    {{"source": "tool_name", "data": "findings"}},
+                    ...
+                ]
+            }}
+            
+            Be concise. Focus on execution.""",
             model=OpenAIChatCompletionsModel(
                 model=self.model_name,
                 openai_client=self.async_client,
@@ -123,8 +136,8 @@ class Model:
 
             You will receive:
             - The original question
-            - A search plan
-            - Search results from tools
+            - A JSON search plan
+            - JSON search results
             
             NOW think deeply and carefully:
             - Analyze all evidence from the search results
@@ -147,6 +160,22 @@ class Model:
             ),
             tools=[],  # Empty list - conclusion agent doesn't need tools
         )
+
+    def _extract_json(self, text: str) -> str:
+        """Extract JSON from agent output, handling thinking blocks"""
+        # Try to find JSON in the text
+        # Look for {...} pattern
+        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
+        if json_match:
+            try:
+                # Validate it's proper JSON
+                json.loads(json_match.group())
+                return json_match.group()
+            except json.JSONDecodeError:
+                pass
+        
+        # If no valid JSON found, return the original text
+        return text
 
     def completion(self, prompts, temperature=1, max_tokens=512):
         """
@@ -186,14 +215,15 @@ class Model:
             input=f"Create a search plan for this question:\n{input_text}"
         )
         
-        # Extract the plan from the result
-        plan_output = plan_result.text if hasattr(plan_result, 'text') else str(plan_result)
+        # Extract JSON from plan result
+        plan_text = plan_result.text if hasattr(plan_result, 'text') else str(plan_result)
+        plan_json = self._extract_json(plan_text)
         
         # Step 2: Search execution (moderate tokens - 800 max)
-        search_input = f"""Execute this plan:
-{plan_output}
+        search_input = f"""Search plan:
+{plan_json}
 
-For the question:
+Execute searches for the question:
 {input_text}"""
         
         search_result = await Runner.run(
@@ -201,20 +231,21 @@ For the question:
             input=search_input
         )
         
-        # Extract the search results
-        search_output = search_result.text if hasattr(search_result, 'text') else str(search_result)
+        # Extract JSON from search results
+        search_text = search_result.text if hasattr(search_result, 'text') else str(search_result)
+        search_json = self._extract_json(search_text)
         
         # Step 3: Conclusion (most tokens - 2048 max for deep reasoning)
-        conclusion_input = f"""Original Question:
+        conclusion_input = f"""Question:
 {input_text}
 
 Search Plan:
-{plan_output}
+{plan_json}
 
 Search Results:
-{search_output}
+{search_json}
 
-Now analyze carefully and provide your final answer."""
+Analyze and provide your final answer."""
         
         final_result = await Runner.run(
             self.conclusion_agent, 
