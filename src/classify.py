@@ -101,22 +101,36 @@ def generate_completions(questions: List[Dict[str, Any]], model: Model, output_f
         
         try:
             prompts = create_prompts(batch, model.model_name)
-            response = model.completion(
+            responses = model.completion(
                 messages=prompts,
                 temperature=TEMPERATURE,
                 max_tokens=MAX_TOKENS_PER_QUESTION
             )
-
-            for i, (question_data, choice) in enumerate(zip(batch, response.choices)):
-                response_text = choice.text
-                answer_letter = extract_answer_from_response(response_text, question_data)
-                
-                result = {
-                    **question_data,
-                    'raw_response': response_text,
-                    'answer_letter': answer_letter
-                }
-                results.append(result)
+            
+            # Handle batch responses (list of response objects)
+            if isinstance(responses, list):
+                for question_data, response in zip(batch, responses):
+                    response_text = response.choices[0].text
+                    answer_letter = extract_answer_from_response(response_text, question_data)
+                    
+                    result = {
+                        **question_data,
+                        'raw_response': response_text,
+                        'answer_letter': answer_letter
+                    }
+                    results.append(result)
+            else:
+                # Single response object
+                for i, (question_data, choice) in enumerate(zip(batch, responses.choices)):
+                    response_text = choice.text
+                    answer_letter = extract_answer_from_response(response_text, question_data)
+                    
+                    result = {
+                        **question_data,
+                        'raw_response': response_text,
+                        'answer_letter': answer_letter
+                    }
+                    results.append(result)
                 
         except Exception as e:
             print(f"Error processing batch {batch_idx + 1}: {e}")
