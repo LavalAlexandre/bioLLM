@@ -63,20 +63,48 @@ class Model:
             if text is None:
                 message = choice_dict.get("message") or {}
                 text = message.get("content", "")
-
             return SimpleNamespace(
                 text=text,
                 index=choice_dict.get("index"),
                 logprobs=choice_dict.get("logprobs"),
                 finish_reason=choice_dict.get("finish_reason")
             )
-        print(f"Raw response: {raw_response}")
+        
+        def _wrap_response(raw_response):
+            return SimpleNamespace(
+                id=raw_response.get("id"),
+                object=raw_response.get("object"),
+                created=raw_response.get("created"),
+                model=raw_response.get("model"),
+                usage=raw_response.get("usage"),
+                choices=[_to_choice(choice) for choice in raw_response.get("choices", [])]
+            )
 
-        return SimpleNamespace(
-            id=raw_response.get("id"),
-            object=raw_response.get("object"),
-            created=raw_response.get("created"),
-            model=raw_response.get("model"),
-            usage=raw_response.get("usage"),
-            choices=[_to_choice(choice) for choice in raw_response.get("choices", [])]
-        )
+        def _dispatch(chat_messages):
+            raw_response = litellm.completion(
+                        model=model,
+                        messages=chat_messages,
+                        api_base=api_base,
+                        api_key=api_key,
+                        custom_llm_provider="openai",
+                        temperature=temperature,
+                        max_tokens=max_tokens)
+            print(f"Raw response from litellm: {raw_response}")
+            return _wrap_response(raw_response)
+
+        if isinstance(messages, list) and all(not isinstance(item, dict) for item in messages):
+            return [
+                _dispatch([{"role": "user", "content": str(item)}])
+                for item in messages
+            ]
+
+        if isinstance(messages, list):
+            chat_messages = [
+                item if isinstance(item, dict)
+                else {"role": "user", "content": str(item)}
+                for item in messages
+            ]
+        else:
+            chat_messages = [{"role": "user", "content": str(messages)}]
+
+        return _dispatch(chat_messages)
