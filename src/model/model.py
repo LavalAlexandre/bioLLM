@@ -69,7 +69,7 @@ class Model:
                 model=self.model_name,
                 openai_client=self.async_client,
                 # Planning should be quick - limit tokens
-                max_tokens=300,
+                max_completion_tokens=300,
                 temperature=0.3,  # Lower temperature for focused planning
                 frequency_penalty=0.5,  # Discourage repetition
             ),
@@ -106,7 +106,7 @@ class Model:
                 model=self.model_name,
                 openai_client=self.async_client,
                 # Search agent needs tokens for tool calls but not extensive reasoning
-                max_tokens=800,
+                max_completion_tokens=800,
                 temperature=0.5,
                 frequency_penalty=0.3,
             ),
@@ -136,7 +136,7 @@ class Model:
                 model=self.model_name,
                 openai_client=self.async_client,
                 # Conclusion agent gets the most tokens for deep reasoning
-                max_tokens=2048,
+                max_completion_tokens=2048,
                 temperature=self.temperature,  # Use configured temperature
                 frequency_penalty=0.0,  # Allow thorough exploration
                 presence_penalty=0.2,  # Encourage covering different aspects
@@ -144,14 +144,14 @@ class Model:
             tools=None,
         )
 
-    def completion(self, prompts, temperature=1, max_tokens=512):
+    def completion(self, prompts, temperature=1, max_completion_tokens=512):
         """
         Generate completions for a single prompt or batch of prompts.
         
         Args:
             prompts: Either a single string prompt or a list of string prompts
             temperature: Sampling temperature
-            max_tokens: Maximum tokens to generate
+            max_completion_tokens: Maximum tokens to generate
             
         Returns:
             A response object with choices attribute
@@ -160,7 +160,7 @@ class Model:
         response = self.client.completions.create(
             model=self.model_name,
             prompt=prompts,
-            max_tokens=max_tokens,
+            max_completion_tokens=max_completion_tokens,
             temperature=temperature
         )
         
