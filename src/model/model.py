@@ -108,9 +108,6 @@ class Model:
         
         tool_list = " and ".join(tool_descriptions) if tools else "no external tools"
         
-        # Detect if model supports thinking (gpt-oss models do, others might not)
-        supports_thinking = 'gpt-oss' in self.model_name.lower()
-        
         # 1. Planning Agent - lightweight, focused on entity extraction (NO TOOLS)
         self.planning_agent = Agent(
             name="Planning Agent",
@@ -133,7 +130,6 @@ class Model:
             model=OpenAIChatCompletionsModel(
                 model=self.model_name,
                 openai_client=self.async_client,
-                thinking={'type': 'enabled', 'budget_tokens': 200} if supports_thinking else None,
             ),
             model_settings=ModelSettings(
                 max_tokens=800,
@@ -166,7 +162,6 @@ class Model:
             model=OpenAIChatCompletionsModel(
                 model=self.model_name,
                 openai_client=self.async_client,
-                thinking={'type': 'enabled', 'budget_tokens': 500} if supports_thinking else None,
             ),
             model_settings=ModelSettings(
                 max_tokens=2000,
@@ -197,7 +192,6 @@ class Model:
             model=OpenAIChatCompletionsModel(
                 model=self.model_name,
                 openai_client=self.async_client,
-                thinking={'type': 'enabled', 'budget_tokens': 1500} if supports_thinking else None,
             ),
             model_settings=ModelSettings(
                 max_tokens=3048,
