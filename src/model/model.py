@@ -38,10 +38,18 @@ class Model:
         model = self.model_name
         api_base = os.getenv("VLLM_ADDRESS", "http://localhost:8000/v1")
         api_key = os.getenv("VLLM_API_KEY", "EMPTY")
+        if isinstance(messages, list):
+            prompt = "\n".join(
+                f"{item.get('role', 'user')}: {item.get('content', '')}"
+                for item in messages
+            )
+        else:
+            prompt = messages
+
 
         raw_response = litellm.completion(
                     model=model,
-                    prompt=messages,
+                    prompt=prompt,
                     api_base=api_base,
                     api_key=api_key,
                     custom_llm_provider="openai",
