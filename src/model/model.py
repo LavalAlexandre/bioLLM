@@ -49,12 +49,28 @@ class Model:
         print(f"Using model: {self.model_name}")
 
         # Initialize specialized agents
-        self._init_agents(enable_biorxiv, enable_cbioportal)
+        self._init_agents(enable_biorxiv=enable_biorxiv, enable_cbioportal=enable_cbioportal)
 
     def _init_agents(self, enable_biorxiv: bool, enable_cbioportal: bool):
         """Initialize the multi-agent system with different token budgets"""
         
-        # 1. Planning Agent - lightweight, focused on entity extraction
+        # Build tool list first - needed for search agent
+        tools = []
+        tool_descriptions = []
+        
+        if enable_biorxiv:
+            tools.append(BiorxivSearchTool)
+            tool_descriptions.append("bioRxiv research papers")
+            print("✓ BioRxiv search tool enabled")
+        
+        if enable_cbioportal:
+            tools.append(CbioportalSearchTool)
+            tool_descriptions.append("cBioPortal mutation data")
+            print("✓ cBioPortal search tool enabled")
+        
+        tool_list = " and ".join(tool_descriptions) if tools else "no external tools"
+        
+        # 1. Planning Agent - lightweight, focused on entity extraction (NO TOOLS)
         self.planning_agent = Agent(
             name="Planning Agent",
             instructions="""You are a planning agent for biological question answering.
@@ -74,25 +90,10 @@ class Model:
                 "temperature": 0.3,
                 "frequencyPenalty": 0.5,
             },
-            tools=None,
+            tools=[],  # Empty list - planning agent doesn't need tools
         )
 
-        # 2. Search Agent - executes searches based on plan
-        tools = []
-        tool_descriptions = []
-        
-        if enable_biorxiv:
-            tools.append(BiorxivSearchTool)
-            tool_descriptions.append("bioRxiv research papers")
-            print("✓ BioRxiv search tool enabled")
-        
-        if enable_cbioportal:
-            tools.append(CbioportalSearchTool)
-            tool_descriptions.append("cBioPortal mutation data")
-            print("✓ cBioPortal search tool enabled")
-        
-        tool_list = " and ".join(tool_descriptions) if tools else "no external tools"
-        
+        # 2. Search Agent - executes searches based on plan (HAS TOOLS)
         self.search_agent = Agent(
             name="Search Agent",
             instructions=f"""You are a search execution agent with access to {tool_list}.
@@ -112,10 +113,10 @@ class Model:
                 "temperature": 0.5,
                 "frequencyPenalty": 0.3,
             },
-            tools=tools if tools else None,
+            tools=tools,  # This will have CbioportalSearchTool when enable_cbioportal=True
         )
 
-        # 3. Conclusion Agent - deep reasoning with gathered data
+        # 3. Conclusion Agent - deep reasoning with gathered data (NO TOOLS)
         self.conclusion_agent = Agent(
             name="Conclusion Agent",
             instructions="""You are an expert biological reasoning agent.
@@ -144,7 +145,7 @@ class Model:
                 "frequencyPenalty": 0.0,
                 "presencePenalty": 0.2,
             },
-            tools=None,
+            tools=[],  # Empty list - conclusion agent doesn't need tools
         )
 
     def completion(self, prompts, temperature=1, max_tokens=512):
