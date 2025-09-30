@@ -6,7 +6,7 @@ from typing import List, Dict, Any
 from openai import OpenAI
 from transformers import AutoTokenizer
 from tqdm import tqdm
-
+from src.model.model import Model
 from src.data_preprocess import load_questions,create_prompts,make_batches
 
 # Set up logging
@@ -90,7 +90,7 @@ def extract_answer_from_response(response_text: str, question_data: Dict[str, An
 
 
 
-def generate_completions(questions, model_name, output_filename="answers.jsonl") -> List[Dict[str, Any]]:
+def generate_completions(questions: List[Dict[str, Any]], model: Model, output_filename: str = "answers.jsonl") -> List[Dict[str, Any]]:
     """Generate completions for a list of questions."""
     batches = make_batches(questions, BATCH_SIZE)
     print(f"Processing {len(questions)} questions in {len(batches)} batches...")
@@ -100,14 +100,13 @@ def generate_completions(questions, model_name, output_filename="answers.jsonl")
         print(f"\nProcessing batch {batch_idx + 1}/{len(batches)} ({len(batch)} questions)...")
         
         try:
-            prompts = create_prompts(batch, model_name)
-            response = client.completions.create(
-                model=model_name,
-                prompt=prompts,
-                max_tokens=MAX_TOKENS_PER_QUESTION,
-                temperature=TEMPERATURE
+            prompts = create_prompts(batch, model.model_name)
+            response = model.completion(
+                messages=prompts,
+                temperature=TEMPERATURE,
+                max_tokens=MAX_TOKENS_PER_QUESTION
             )
-            
+
             for i, (question_data, choice) in enumerate(zip(batch, response.choices)):
                 response_text = choice.text
                 answer_letter = extract_answer_from_response(response_text, question_data)
