@@ -20,7 +20,7 @@ import logging
 
 # Set up more detailed logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.ERROR,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -281,6 +281,7 @@ class Model:
                 logger.info(f"Valid plan: {has_valid_plan}")
             except json.JSONDecodeError as e:
                 logger.warning(f"Failed to parse plan JSON: {e}")
+                
             
             # Step 2: Search execution (only if we have a valid plan)
             search_json = None
