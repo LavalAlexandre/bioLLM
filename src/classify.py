@@ -68,7 +68,6 @@ def extract_answer_from_response(response_text: str, question_data: Dict[str, An
     # Default to 'X' if no answer found
     return 'X'
 
-
 async def generate_completions_with_agent(questions: List[Dict[str, Any]], model: Model, output_filename: str = "answers.jsonl") -> List[Dict[str, Any]]:
     """Generate completions for a list of questions using the agent with batch processing."""
     print(f"Processing {len(questions)} questions using agent (batched)...")
@@ -80,8 +79,8 @@ async def generate_completions_with_agent(questions: List[Dict[str, Any]], model
     for batch_idx, batch in enumerate(batches):
         print(f"\nProcessing batch {batch_idx + 1}/{len(batches)} ({len(batch)} questions)...")
         
-        # Get prompts for this batch
-        batch_prompts = create_prompts(batch, model.model_name)
+        # Get prompts for this batch - use_agent=True for clean question text
+        batch_prompts = create_prompts(batch, model.model_name, use_agent=True)
         
         try:
             # Run batch completion concurrently
@@ -135,7 +134,8 @@ def generate_completions(questions: List[Dict[str, Any]], model: Model, output_f
         print(f"\nProcessing batch {batch_idx + 1}/{len(batches)} ({len(batch)} questions)...")
         
         try:
-            prompts = create_prompts(batch, model.model_name)
+            # use_agent=False for tokenizer chat template
+            prompts = create_prompts(batch, model.model_name, use_agent=False)
             response = model.completion(
                 prompts=prompts,
                 max_tokens=MAX_TOKENS_PER_QUESTION,
@@ -170,26 +170,3 @@ def generate_completions(questions: List[Dict[str, Any]], model: Model, output_f
     
     print(f"Results saved to {output_filename}")
     return results
-
-
-async def classify_file_async(file, model, use_agent=True):
-    """Async version of classify_file that supports agent completion."""
-    if Path(file).exists():
-        print(f"ℹ️  Found {file} in directory, processing test questions...")
-        questions = load_questions(file)
-        print(f"ℹ️  Loaded {len(questions)} questions from {file}")
-        print("ℹ️  Generating completions...")
-        
-        if use_agent:
-            results = await generate_completions_with_agent(questions, model, "result/test_answers.jsonl")
-        else:
-            results = generate_completions(questions, model, "result/test_answers.jsonl")
-        
-        print("✅ Test questions processed!")
-    else:
-        print(f"ℹ️  No {file} found in directory")
-
-
-def classify_file(file, model, use_agent=True):
-    """Wrapper to run async classify_file."""
-    asyncio.run(classify_file_async(file, model, use_agent))

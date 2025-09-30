@@ -29,17 +29,19 @@ def get_tokenizer(model: str) -> AutoTokenizer:
     return _tokenizer_cache[model]
 
 
-def create_prompts(questions: List[Dict[str, Any]], model_name:str) -> List[str]:
+def create_prompts(questions: List[Dict[str, Any]], model_name:str, use_agent: bool = False) -> List[str]:
     """
-    Create prompts for a batch of questions using AutoTokenizer.
+    Create prompts for a batch of questions.
     
     Args:
         questions: List of question data
+        model_name: Name of the model for tokenizer
+        use_agent: If True, return raw question text for agent processing. 
+                   If False, use tokenizer chat template for direct completion.
     
     Returns:
         List of formatted prompts
     """
-    tokenizer = get_tokenizer(model_name)
     prompts = []
     
     for question_data in questions:
@@ -53,18 +55,30 @@ def create_prompts(questions: List[Dict[str, Any]], model_name:str) -> List[str]
             except:
                 options = {}
         
-        # Create the prompt with dynamic options
+        # Create the options text
         options_text = ""
         for key, value in options.items():
             options_text += f"{key}: {value}\n"
         
-        # Determine the valid options for the system message
+        # Determine the valid options
         valid_options = list(options.keys())
         options_list = ", ".join(valid_options)
         
-        messages = [
-            {"role": "system", "content": f"You are a biology expert. Answer the following multiple choice questions by selecting the correct option ({options_list}) and providing a brief explanation. Always format your answer as <answer>[letter]</answer>."},
-            {"role": "user", "content": f"""Question: {question}
+        if use_agent:
+            # For agent mode: return simple, clean question text
+            # The agent's instructions already define the task
+            prompt = f"""Question: {question}
+
+Options:
+{options_text}
+Please provide your answer as a single letter ({options_list}) followed by a brief explanation.
+Format your answer as: <answer>[letter]</answer>"""
+        else:
+            # For direct completion: use tokenizer chat template
+            tokenizer = get_tokenizer(model_name)
+            messages = [
+                {"role": "system", "content": f"You are a biology expert. Answer the following multiple choice questions by selecting the correct option ({options_list}) and providing a brief explanation. Always format your answer as <answer>[letter]</answer>."},
+                {"role": "user", "content": f"""Question: {question}
 
 Options:
 {options_text}
@@ -72,16 +86,16 @@ Please provide your answer as a single letter ({options_list}) followed by a bri
 Format your answer as: <answer>[letter]</answer>
 
 Answer:"""}
-        ]
+            ]
+            
+            prompt = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=True
+            )
         
-        text = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=True # Switches between thinking and non-thinking modes. Default is True.
-        )
-        
-        prompts.append(text)
+        prompts.append(prompt)
     
     return prompts
 
