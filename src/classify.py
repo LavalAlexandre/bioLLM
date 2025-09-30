@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 BATCH_SIZE = 256  # Number of questions per batch
 MAX_TOKENS_PER_QUESTION = 2_000  # Max tokens per individual question
 TEMPERATURE = 0.7  # Model temp
-MAX_CONCURRENT_AGENTS = 10  # Maximum concurrent agent requests
+MAX_CONCURRENT_AGENTS = BATCH_SIZE  # Maximum concurrent agent requests
 
 # Initialize the OpenAI client to connect to vLLM server
 client = OpenAI(

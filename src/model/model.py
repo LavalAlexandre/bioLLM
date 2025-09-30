@@ -6,6 +6,12 @@ import asyncio
 from typing import List, Union
 load_dotenv()
 
+# Ensure OPENAI_API_KEY is set for the agents library
+if not os.getenv("OPENAI_API_KEY"):
+    print("WARNING: OPENAI_API_KEY not found in .env file")
+else:
+    os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
+
 class Model:
 
     def __init__(self,temperature:int=1):
