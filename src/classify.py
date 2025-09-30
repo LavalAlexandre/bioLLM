@@ -170,3 +170,26 @@ def generate_completions(questions: List[Dict[str, Any]], model: Model, output_f
     
     print(f"Results saved to {output_filename}")
     return results
+
+
+async def classify_file_async(file, model, use_agent=True):
+    """Async version of classify_file that supports agent completion."""
+    if Path(file).exists():
+        print(f"ℹ️  Found {file} in directory, processing test questions...")
+        questions = load_questions(file)
+        print(f"ℹ️  Loaded {len(questions)} questions from {file}")
+        print("ℹ️  Generating completions...")
+        
+        if use_agent:
+            results = await generate_completions_with_agent(questions, model, "result/test_answers.jsonl")
+        else:
+            results = generate_completions(questions, model, "result/test_answers.jsonl")
+        
+        print("✅ Test questions processed!")
+    else:
+        print(f"ℹ️  No {file} found in directory")
+
+
+def classify_file(file, model, use_agent=True):
+    """Wrapper to run async classify_file."""
+    asyncio.run(classify_file_async(file, model, use_agent))
