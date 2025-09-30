@@ -207,10 +207,13 @@ class Model:
         Returns:
             The final agent's response
         """
+        # Extract just the question text (without options) for planning/search
+        base_question = self._extract_base_question(input_text)
+        
         # Step 1: Planning (limited tokens - 300 max)
         plan_result = await Runner.run(
             self.planning_agent, 
-            input=f"Create a search plan for this question:\n{input_text}"
+            input=f"Create a search plan for this question:\n{base_question}"
         )
 
         
@@ -219,11 +222,12 @@ class Model:
         plan_json = self._extract_json(plan_text)
         
         # Step 2: Search execution (moderate tokens - 800 max)
+        # Only provide the base question, not the answer options
         search_input = f"""Search plan:
 {plan_json}
 
 Execute searches for the question:
-{input_text}"""
+{base_question}"""
         
         search_result = await Runner.run(
             self.search_agent, 
@@ -235,6 +239,7 @@ Execute searches for the question:
         search_json = self._extract_json(search_text)
         
         # Step 3: Conclusion (most tokens - 2048 max for deep reasoning)
+        # NOW provide the full question with options for final reasoning
         conclusion_input = f"""Question:
 {input_text}
 
@@ -252,6 +257,31 @@ Analyze and provide your final answer."""
         )
         
         return final_result
+
+
+    def _extract_base_question(self, input_text: str) -> str:
+        """Extract just the question text without answer options and instructions"""
+        # Remove everything from "Options:" onward
+        if "Options:" in input_text:
+            parts = input_text.split("Options:", 1)
+            question_part = parts[0].strip()
+        else:
+            question_part = input_text
+        
+        # Remove everything from "Please provide" onward (catches both variants)
+        if "Please provide" in question_part:
+            question_part = question_part.split("Please provide", 1)[0].strip()
+        
+        # Remove "Question:" prefix if present
+        if question_part.startswith("Question:"):
+            question_part = question_part.replace("Question:", "", 1).strip()
+        
+        # Remove "Format your answer" if somehow still present
+        if "Format your answer" in question_part:
+            question_part = question_part.split("Format your answer", 1)[0].strip()
+        
+        return question_part
+
 
     async def agent_batch_completion(self, inputs: List[str], max_concurrent: int = 10):
         """
