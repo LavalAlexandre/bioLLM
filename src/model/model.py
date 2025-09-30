@@ -44,31 +44,27 @@ class Model:
         # Normalize messages to list of message lists
         if isinstance(messages, list) and all(not isinstance(item, dict) for item in messages):
             # List of simple prompts - batch them
+            # messages is already a list of strings/prompts
+            # Each prompt needs to be converted to a message format
             message_batches = [
-                [{"role": "user", "content": str(item)}]
+                {"role": "user", "content": str(item)}
                 for item in messages
             ]
             
             try:
                 responses = batch_completion_models_all_responses(
-                    models=[model] * len(message_batches),
-                    messages=message_batches,
+                    models=[model] * len(messages),
+                    messages=[[msg] for msg in message_batches],  # Wrap each message in a list
                     api_base=api_base,
                     api_key=api_key,
                     custom_llm_provider="openai",
                     temperature=temperature,
                     max_tokens=max_tokens
                 )
-                print(f"DEBUG: Batch responses type: {type(responses)}")
-                print(f"DEBUG: Batch responses length: {len(responses) if hasattr(responses, '__len__') else 'N/A'}")
-                if isinstance(responses, list) and len(responses) > 0:
-                    print(f"DEBUG: First response type: {type(responses[0])}")
-                    print(f"DEBUG: First response: {responses[0]}")
                 
                 return [self._wrap_response(resp) for resp in responses]
             except Exception as e:
                 print(f"DEBUG: Error in batch_completion: {e}")
-                print(f"DEBUG: Error type: {type(e)}")
                 import traceback
                 traceback.print_exc()
                 raise
@@ -94,6 +90,7 @@ class Model:
         )
         
         return self._wrap_response(raw_response)
+
     
     def _wrap_response(self, raw_response):
         # Debug: print the type and structure
