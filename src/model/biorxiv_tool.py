@@ -1,6 +1,7 @@
-from agents import FunctionTool
+from agents import function_tool
 from duckduckgo_search import DDGS
 
+@function_tool
 def search_biorxiv(query: str) -> str:
     """
     Search bioRxiv for biology preprints using DuckDuckGo.
@@ -39,9 +40,5 @@ def search_biorxiv(query: str) -> str:
         return f"Error searching bioRxiv: {str(e)}"
 
 
-# Create the FunctionTool instance
-BiorxivSearchTool = FunctionTool(
-    function=search_biorxiv,
-    name="search_biorxiv",
-    description="Search bioRxiv for biology preprints. Use this when you need to find recent research papers or preprints on biological topics."
-)
+# The decorator creates the tool, assign it to a variable
+BiorxivSearchTool = search_biorxiv
