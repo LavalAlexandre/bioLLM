@@ -4,9 +4,8 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-
 class Model:
-
+    
     def __init__(self):
         print("Initializing Model and connecting to vLLM server...")
         self.client = OpenAI(
@@ -31,42 +30,24 @@ class Model:
         print(f"Using model: {self.model_name}")
 
 
-
-def generate_completions(questions, model_name, output_filename="answers.jsonl") -> List[Dict[str, Any]]:
-    """Generate completions for a list of questions."""
-    batches = make_batches(questions, BATCH_SIZE)
-    print(f"Processing {len(questions)} questions in {len(batches)} batches...")
-    
-    results = []
-    for batch_idx, batch in tqdm(enumerate(batches), total=len(batches)):
-        print(f"\nProcessing batch {batch_idx + 1}/{len(batches)} ({len(batch)} questions)...")
+    def completion(self, prompts, temperature=1, max_tokens=512):
+        """
+        Generate completions for a single prompt or batch of prompts.
         
-        try:
-            prompts = create_prompts(batch, model_name)
-            response = client.completions.create(
-                model=model_name,
-                prompt=prompts,
-                max_tokens=MAX_TOKENS_PER_QUESTION,
-                temperature=TEMPERATURE
-            )
+        Args:
+            prompts: Either a single string prompt or a list of string prompts
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
             
-            for i, (question_data, choice) in enumerate(zip(batch, response.choices)):
-                response_text = choice.text
-                answer_letter = extract_answer_from_response(response_text, question_data)
-                
-                result = {
-                    **question_data,
-                    'raw_response': response_text,
-                    'answer_letter': answer_letter
-                }
-                results.append(result)
-                
-        except Exception as e:
-            print(f"Error processing batch {batch_idx + 1}: {e}")
-            for question_data in batch:
-                result = {
-                    **question_data,
-                    'raw_response': f'Error: {str(e)}',
-                    'answer_letter': 'X'
-                }
-                results.append(result)
+        Returns:
+            A response object with choices attribute
+        """
+        # Use the completions API for batch processing
+        response = self.client.completions.create(
+            model=self.model_name,
+            prompt=prompts,
+            max_tokens=max_tokens,
+            temperature=temperature
+        )
+        
+        return response
