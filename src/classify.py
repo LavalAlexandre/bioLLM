@@ -2,12 +2,13 @@ from pathlib import Path
 from typing import List, Dict, Any
 from openai import OpenAI
 from transformers import AutoTokenizer
-from tqdm import tqdm
+from tqdm.asyncio import tqdm
 from src.model.model import Model
 from src.data_preprocess import load_questions, create_prompts, make_batches
 import json
 import re
 import logging
+import asyncio
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -89,8 +90,54 @@ def extract_answer_from_response(response_text: str, question_data: Dict[str, An
     return 'X'
 
 
+async def generate_completions_with_agent(questions: List[Dict[str, Any]], model: Model, output_filename: str = "answers.jsonl") -> List[Dict[str, Any]]:
+    """Generate completions for a list of questions using the agent."""
+    print(f"Processing {len(questions)} questions using agent...")
+    
+    results = []
+    
+    # Process questions with progress bar
+    for question_data in tqdm(questions, desc="Processing questions"):
+        try:
+            # Create prompt for single question
+            prompts = create_prompts([question_data], model.model_name)
+            prompt = prompts[0] if isinstance(prompts, list) else prompts
+            
+            # Use agent completion
+            result_obj = await model.agent_completion(prompt)
+            
+            # Extract response text from agent result
+            response_text = str(result_obj.final_response) if hasattr(result_obj, 'final_response') else str(result_obj)
+            
+            answer_letter = extract_answer_from_response(response_text, question_data)
+            
+            result = {
+                **question_data,
+                'raw_response': response_text,
+                'answer_letter': answer_letter
+            }
+            results.append(result)
+            
+        except Exception as e:
+            print(f"Error processing question {question_data.get('id', 'unknown')}: {e}")
+            result = {
+                **question_data,
+                'raw_response': f'Error: {str(e)}',
+                'answer_letter': 'X'
+            }
+            results.append(result)
+    
+    # Save results
+    with open(output_filename, 'w') as f:
+        for result in results:
+            f.write(json.dumps(result) + '\n')
+    
+    print(f"Results saved to {output_filename}")
+    return results
+
+
 def generate_completions(questions: List[Dict[str, Any]], model: Model, output_filename: str = "answers.jsonl") -> List[Dict[str, Any]]:
-    """Generate completions for a list of questions."""
+    """Generate completions for a list of questions (legacy batch mode)."""
     batches = make_batches(questions, BATCH_SIZE)
     print(f"Processing {len(questions)} questions in {len(batches)} batches...")
     
@@ -136,13 +183,24 @@ def generate_completions(questions: List[Dict[str, Any]], model: Model, output_f
     return results
 
 
-def classify_file(file, model):
+async def classify_file_async(file, model, use_agent=True):
+    """Async version of classify_file that supports agent completion."""
     if Path(file).exists():
         print(f"ℹ️  Found {file} in directory, processing test questions...")
         questions = load_questions(file)
         print(f"ℹ️  Loaded {len(questions)} questions from {file}")
         print("ℹ️  Generating completions...")
-        results = generate_completions(questions, model, "result/test_answers.jsonl")
+        
+        if use_agent:
+            results = await generate_completions_with_agent(questions, model, "result/test_answers.jsonl")
+        else:
+            results = generate_completions(questions, model, "result/test_answers.jsonl")
+        
         print("✅ Test questions processed!")
     else:
         print(f"ℹ️  No {file} found in directory")
+
+
+def classify_file(file, model, use_agent=True):
+    """Wrapper to run async classify_file."""
+    asyncio.run(classify_file_async(file, model, use_agent))

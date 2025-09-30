@@ -1,17 +1,25 @@
-from openai import OpenAI
-from types import SimpleNamespace
+from openai import OpenAI, AsyncOpenAI
+from agents import Agent, Runner, OpenAIChatCompletionsModel, ModelSettings
 import os
 from dotenv import load_dotenv
 load_dotenv()
 
 class Model:
-    
-    def __init__(self):
+
+    def __init__(self,temperature:int=1):
         print("Initializing Model and connecting to vLLM server...")
         self.client = OpenAI(
             api_key="EMPTY",  # vLLM doesn't require authentication
             base_url="http://localhost:8000/v1", #vLLM server URL, make sure you have the correct port
         )
+
+        # Create async client for agent
+        self.async_client = AsyncOpenAI(
+            api_key="EMPTY",
+            base_url="http://localhost:8000/v1",
+        )
+
+        self.model_settings = ModelSettings(temperature=temperature)
 
         # Test the connection
         try:
@@ -28,6 +36,17 @@ class Model:
             print("Make sure the server is running by executing `./start_vllm_docker.sh`")
             raise e 
         print(f"Using model: {self.model_name}")
+
+        # Define the agent with async client
+        self.agent = Agent(
+            name="Openai agent",
+            instructions="Answer the question as truthfully as possible",
+            model=OpenAIChatCompletionsModel(
+                openai_client=self.async_client,
+                model_name=self.model_name,
+                model_settings=self.model_settings
+            ),
+        )
 
 
     def completion(self, prompts, temperature=1, max_tokens=512):
@@ -51,3 +70,16 @@ class Model:
         )
         
         return response
+
+    async def agent_completion(self, input_text: str):
+        """
+        Generate completions using the agent framework.
+        
+        Args:
+            input_text: The input prompt/question
+            
+        Returns:
+            The agent's response
+        """
+        result = await Runner.run(self.agent, input=input_text)
+        return result
