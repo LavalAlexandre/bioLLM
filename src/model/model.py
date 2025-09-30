@@ -35,15 +35,19 @@ class Model:
         print(f"Using model: {self.model_name}")
 
     def completion(self, messages, temperature=1, max_tokens=512):
-        model=self.model_name
-        api_base = os.getenv("VLLM_ADDRESS")
+        model = self.model_name
+        api_base = os.getenv("VLLM_ADDRESS", "http://localhost:8000/v1")
+        api_key = os.getenv("VLLM_API_KEY", "EMPTY")
 
         raw_response = litellm.completion(
                     model=model,
                     prompt=messages,
                     api_base=api_base,
+                    api_key=api_key,
+                    custom_llm_provider="openai",
                     temperature=temperature,
                     max_tokens=max_tokens)
+
 
         def _to_choice(choice_dict):
             text = choice_dict.get("text")
@@ -66,7 +70,3 @@ class Model:
             usage=raw_response.get("usage"),
             choices=[_to_choice(choice) for choice in raw_response.get("choices", [])]
         )
-        
-
-        
-        return response
