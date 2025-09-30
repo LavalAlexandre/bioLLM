@@ -43,7 +43,7 @@ class Model:
             instructions="Answer the question as truthfully as possible",
             model=OpenAIChatCompletionsModel(
                 openai_client=self.async_client,
-                model_name=self.model_name,
+                model=self.model_name,  # Changed from model_name to model
                 model_settings=self.model_settings
             ),
         )
