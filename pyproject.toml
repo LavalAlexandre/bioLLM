@@ -1,0 +1,24 @@
+[project]
+name = "decoding-biology-hackathon-platform"
+version = "0.1.0"
+description = "Minimal biology hackathon platform"
+dependencies = [
+    "jupyter",
+    "ipykernel",
+    "openai",
+    "requests",
+    "numpy<2.3",
+    "torch<2.7",
+    "transformers",
+    "smolagents",
+    "ddgs>=9.5.5",
+    "boto3",
+    "botocore",
+    "cmake>=4.1.0",
+    "bravado>=12.0.1",
+    "cbio-py>=0.1.4",
+    "pandas>=2.3.2",
+    "bio>=1.8.0",
+    "aiohttp>=3.12.15",
+]
+
